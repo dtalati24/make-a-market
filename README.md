@@ -1,56 +1,67 @@
-# Welcome to your Expo app 👋
+# Make a Market
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+An Android app for keeping yourself honest about predictions. For each question you
+**make a market**:
 
-## Get started
+- **Yes/No markets** — quote one fair price from 1 to 99 (your probability, in %).
+  Scored by Brier score on the starting price: `(price − outcome)²`, where 0 is perfect
+  and a 50% guess scores 0.250.
+- **Number markets** — quote a bid @ ask and pick your own width. When it settles, the
+  cost is `spread + 4 × miss`, measured on a `ln(1 + x)` scale in points. The best
+  long-run play is to quote your honest 25th and 75th percentiles, so the answer lands
+  inside about half the time.
 
-1. Install dependencies
+Markets can be re-quoted as you learn more (the starting quote is what gets scored),
+settled, voided or reopened. Decisions can be logged as Yes/No markets with options, a
+success criterion and a 1–5 decision-quality rating. The **Stats** tab shows calibration,
+Brier breakdown, trends, by-tag tables and, for Number markets, where the answers landed.
 
-   ```bash
-   npm install
-   ```
+All data stays on the phone (SQLite). **Settings** can export a JSON backup or a CSV
+spreadsheet through the share menu, import a backup, load demo data and set a daily
+settle-by reminder time.
 
-2. Start the app
+The full spec is in [PLAN.md](PLAN.md).
 
-   ```bash
-   npx expo start
-   ```
+## Stack
 
-In the output, you'll find options to open the app in a
+Expo SDK 57 · React Native 0.86 · TypeScript (strict) · Expo Router · expo-sqlite ·
+expo-notifications (local reminders) · react-native-svg charts.
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## Development
 
 ```bash
-npm run reset-project
+npm install
+npm run web        # browser preview (reminders are off on web)
+npm run android    # needs a development build or emulator
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Checks:
 
-### Other setup steps
+```bash
+npm run typecheck
+npm run lint
+npm test
+```
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+## Building the APK
 
-## Learn more
+Builds run in the cloud on EAS (project `@dtalati24/make-a-market`). The `preview`
+profile produces an installable APK and bumps the version code automatically, so a new
+APK installs over the old one and keeps your data.
 
-To learn more about developing your project with Expo, look at the following resources:
+```bash
+npx eas-cli build -p android --profile preview
+```
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+Uninstalling the app deletes its data — export a backup from Settings first.
 
-## Join the community
+## Project layout
 
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```
+src/app/          routes: tabs (Markets, Stats, Settings), New, Market, Edit
+src/db/           schema + migrations, queries, backup, data-change events
+src/scoring/      Brier / log score / calibration and Number-market cost, with tests
+src/lib/          dates, formatting, reminders, backup format, demo data, actions
+src/components/   inputs, rows, charts and UI primitives
+scripts/          generate-icons.js draws the app, tab and notification icons
+```
