@@ -5,22 +5,19 @@ import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { formatPercent } from '@/lib/format';
 
-type Segment = { key: 'below' | 'inside' | 'above'; label: string; share: number; target: number; color: string };
+type Segment = { key: 'below' | 'inside' | 'above'; label: string; share: number; color: string };
 
-/**
- * Where Number answers landed relative to the quote: a stacked bar of below / inside / above
- * shares, a thin row underneath showing the 25 / 50 / 25 target, and a labelled legend.
- */
+/** Where Number answers landed relative to the quote: a stacked bar of below / inside / above shares. */
 export function LandingBar({ below, inside, above }: { below: number; inside: number; above: number }) {
   const theme = useTheme();
   const segments: Segment[] = [
-    { key: 'below', label: 'Below bid', share: below, target: 0.25, color: theme.ask },
-    { key: 'inside', label: 'Inside', share: inside, target: 0.5, color: theme.bid },
-    { key: 'above', label: 'Above ask', share: above, target: 0.25, color: theme.warning },
+    { key: 'below', label: 'Below bid', share: below, color: theme.ask },
+    { key: 'inside', label: 'Inside', share: inside, color: theme.bid },
+    { key: 'above', label: 'Above ask', share: above, color: theme.warning },
   ];
   const summary = `Where the answer landed: ${segments
-    .map((s) => `${s.label.toLowerCase()} ${formatPercent(s.share)}, target ${formatPercent(s.target)}`)
-    .join('; ')}.`;
+    .map((s) => `${s.label.toLowerCase()} ${formatPercent(s.share)}`)
+    .join(', ')}.`;
 
   return (
     <View accessible accessibilityRole="image" accessibilityLabel={summary} style={styles.container}>
@@ -28,11 +25,6 @@ export function LandingBar({ below, inside, above }: { below: number; inside: nu
         {segments.map((s) =>
           s.share > 0 ? <View key={s.key} style={{ flex: s.share, backgroundColor: s.color }} /> : null,
         )}
-      </View>
-      <View style={styles.targetRow}>
-        {segments.map((s) => (
-          <View key={s.key} style={[styles.target, { flex: s.target, backgroundColor: s.color }]} />
-        ))}
       </View>
       <View style={styles.legend}>
         {segments.map((s, i) => (
@@ -44,9 +36,6 @@ export function LandingBar({ below, inside, above }: { below: number; inside: nu
               </ThemedText>
             </View>
             <ThemedText type="smallBold">{formatPercent(s.share)}</ThemedText>
-            <ThemedText type="small" themeColor="textSecondary">
-              {`target ${formatPercent(s.target)}`}
-            </ThemedText>
           </View>
         ))}
       </View>
@@ -63,15 +52,6 @@ const styles = StyleSheet.create({
     height: 22,
     borderRadius: Radius.small,
     overflow: 'hidden',
-  },
-  targetRow: {
-    flexDirection: 'row',
-    gap: Spacing.half,
-    height: 4,
-  },
-  target: {
-    borderRadius: Spacing.half,
-    opacity: 0.4,
   },
   legend: {
     flexDirection: 'row',

@@ -10,6 +10,7 @@ import { Chip } from '@/components/chip';
 import { EmptyState } from '@/components/empty-state';
 import { NumberQuoteInput } from '@/components/number-quote-input';
 import { PricePicker } from '@/components/price-picker';
+import { useRating } from '@/components/rating-provider';
 import { ScrollScreen } from '@/components/screen';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
@@ -31,7 +32,7 @@ import { confirm, showMessage } from '@/lib/confirm';
 import { formatDate, formatDateTime, parseLocalDate, relativeDays } from '@/lib/dates';
 import { errorMessage } from '@/lib/errors';
 import { goBack } from '@/lib/navigation';
-import { formatPrice, parseNumberInput } from '@/lib/format';
+import { formatNumber, formatPoints, formatPrice, parseNumberInput } from '@/lib/format';
 import {
   currentQuote,
   formatBinaryQuote,
@@ -39,14 +40,15 @@ import {
   initialQuote,
   marketScore,
   noLabel,
-  numberCostAt,
+  numberScoreAt,
   outcomeLabel,
   positionPhrase,
   wasRequoted,
   withUnit,
   yesLabel,
 } from '@/lib/market-view';
-import { MISS_MULTIPLIER, spreadPoints } from '@/scoring';
+import { formatChange, formatRating } from '@/lib/rating-view';
+import { quoteWidthShare, WIDTH_K } from '@/scoring';
 
 function Caption({ children }: { children: string }) {
   return (
@@ -182,7 +184,7 @@ function QuoteCard({ market }: { market: Market }) {
   } else {
     const bid = open ? market.bid! : market.initialBid!;
     const ask = open ? market.ask! : market.initialAsk!;
-    note = `Spread ${Math.round(spreadPoints(bid, ask))} pts${market.unit ? ` · ${market.unit}` : ''}`;
+    note = `Width ${formatNumber(ask - bid)} · ${Math.round(quoteWidthShare(bid, ask) * 100)}% of the midpoint${market.unit ? ` · ${market.unit}` : ''}`;
   }
 
   return (
@@ -406,10 +408,13 @@ function SettleNumberCard({ market }: { market: Market }) {
       return;
     }
     setError(null);
-    const cost = numberCostAt(market, value);
+    const result = numberScoreAt(market, value);
     const ok = await confirm({
       title: `Settle at ${withUnit(value, market.unit)}?`,
-      message: `That’s ${positionPhrase(cost.position)}, for a cost of ${Math.round(cost.cost)}.`,
+      message:
+        result.position === 'inside'
+          ? `That’s inside your quote, for a score of ${formatPoints(result.score)} out of 100.`
+          : `That’s ${positionPhrase(result.position)}, so it scores 0.`,
       confirmLabel: 'Settle',
     });
     if (!ok) return;
@@ -441,6 +446,7 @@ function ResultCard({ market }: { market: Market }) {
   const db = useSQLiteContext();
   const theme = useTheme();
   const score = marketScore(market);
+  const movement = useRating()?.rating.history.find((step) => step.id === market.id) ?? null;
 
   async function reopen() {
     const ok = await confirm({
@@ -469,21 +475,28 @@ function ResultCard({ market }: { market: Market }) {
       ) : null}
       {score?.kind === 'binary' ? (
         <>
-          <ThemedText type="smallBold">Brier score {score.brier.toFixed(3)}</ThemedText>
+          <ThemedText type="smallBold">{`Score ${formatPoints(score.points)} / 100`}</ThemedText>
           <ThemedText type="small" themeColor="textSecondary">
-            ({market.initialPrice!.toFixed(2)} − {market.outcome})² = {score.brier.toFixed(3)}. Lower is better; a 50%
-            quote scores 0.250.
+            {`Brier (${market.initialPrice!.toFixed(2)} − ${market.outcome})² = ${score.brier.toFixed(3)}, so the score is 100 − 200 × ${score.brier.toFixed(3)} = ${formatPoints(score.points)}. A 50% quote scores 50.`}
           </ThemedText>
         </>
       ) : null}
       {score?.kind === 'number' ? (
         <>
-          <ThemedText type="smallBold">Cost {score.cost.cost.toFixed(1)}</ThemedText>
+          <ThemedText type="smallBold">{`Score ${formatPoints(score.points)} / 100`}</ThemedText>
           <ThemedText type="small" themeColor="textSecondary">
-            It landed {positionPhrase(score.cost.position)}. Spread {score.cost.spread.toFixed(1)} + {MISS_MULTIPLIER} ×
-            miss {score.cost.miss.toFixed(1)} = {score.cost.cost.toFixed(1)}. Lower is better.
+            {score.result.position === 'inside'
+              ? `It landed inside your quote: 100 ÷ (1 + (${WIDTH_K.toFixed(2)} × ${formatNumber(score.result.width)} ÷ ${formatNumber(Math.max(market.settledValue!, 1))})²) = ${formatPoints(score.points)}. The narrower your quote compared with the answer, the higher.`
+              : `It landed ${positionPhrase(score.result.position)}, so it scores 0.`}
           </ThemedText>
         </>
+      ) : null}
+      {movement ? (
+        <ThemedText type="small" themeColor="textSecondary">
+          {movement.before === null
+            ? `Your first scored market: your rating is now ${formatRating(movement.after)}.`
+            : `It moved your rating from ${movement.before.toFixed(1)} to ${movement.after.toFixed(1)} (${formatChange(movement.after - movement.before)}).`}
+        </ThemedText>
       ) : null}
       <Button title="Reopen" variant="secondary" small onPress={reopen} style={styles.alignStart} />
     </Card>

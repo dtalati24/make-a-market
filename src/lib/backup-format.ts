@@ -7,7 +7,7 @@ import {
   validateSettledValue,
   ValidationError,
 } from '@/db/validation';
-import { brierScore, numberCost } from '@/scoring';
+import { binaryPoints, numberScore } from '@/scoring';
 
 import { isValidDateString, isValidTimeString, toDateString } from './dates';
 import { formatPrice } from './format';
@@ -457,16 +457,16 @@ function resultText(market: Market): string {
   return market.settledValue === null ? '' : plainNumber(market.settledValue);
 }
 
-/** Brier (4 dp) for settled Yes/No, cost (2 dp) for settled Number — both from the starting quote. */
+/** The market's score (1 dp) from its starting quote: 100 − 200 × Brier for Yes/No, 0–100 for Number. */
 function scoreText(market: Market): string {
   if (market.status !== 'settled') return '';
   if (market.kind === 'binary') {
     return market.initialPrice === null || market.outcome === null
       ? ''
-      : brierScore(market.initialPrice, market.outcome).toFixed(4);
+      : binaryPoints(market.initialPrice, market.outcome).toFixed(1);
   }
   if (market.initialBid === null || market.initialAsk === null || market.settledValue === null) return '';
-  return numberCost(market.initialBid, market.initialAsk, market.settledValue).cost.toFixed(2);
+  return numberScore(market.initialBid, market.initialAsk, market.settledValue).score.toFixed(1);
 }
 
 /** Spreadsheets treat cells starting with these as formulas; a leading ' keeps them as text. */

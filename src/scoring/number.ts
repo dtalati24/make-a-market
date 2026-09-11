@@ -2,80 +2,87 @@
  * Scoring for Number markets: the user quotes a bid @ ask range for an unknown non-negative
  * quantity, and the true value is revealed later.
  *
- * Everything is measured on a log(1 + x) scale and multiplied by 100, so "10 points" is
- * roughly "10%" regardless of the quantity's magnitude, and zero is still allowed.
+ * Score, 0–100 (higher is better):
+ *   - 0 if the value lands outside the quote;
+ *   - 100 / (1 + (WIDTH_K × width ÷ max(value, 1))²) if it lands inside. A value exactly on
+ *     the bid or ask counts as inside.
  *
- * cost = spread + MISS_MULTIPLIER * miss is the interval score for a central 50% interval
- * (2 / alpha = 4 with alpha = 0.5). Its expected value is minimised by quoting your own
- * 25th percentile as the bid and 75th percentile as the ask.
+ * An exact quote scores 100, and the score falls smoothly towards 0 as the quote gets wider
+ * compared with the answer: a quote 30% as wide as the answer scores 50, and one like
+ * 1 @ 100000 scores about 0. Answers below 1 are divided by 1, so an answer of 0 works.
  */
-import { mean, wilsonInterval } from './common';
+import { mean } from './common';
 
-/** Each point of miss costs this many points; 4 makes the 25th–75th percentile quote optimal. */
-export const MISS_MULTIPLIER = 4;
+/** Scales width ÷ answer so that a quote 30% as wide as the answer scores 50. */
+export const WIDTH_K = 10 / 3;
 
 export type Position = 'below' | 'inside' | 'above';
 export type NumberItem = { bid: number; ask: number; value: number };
 
-const t = Math.log1p;
-
-/** Width of the quote in points: 100 * (ln(1 + ask) - ln(1 + bid)). Narrower is more precise. */
-export function spreadPoints(bid: number, ask: number): number {
-  validateQuote(bid, ask);
-  return 100 * (t(ask) - t(bid));
-}
-
-export type NumberCost = {
-  /** Width of the quote in points. */
-  spread: number;
-  /** How far outside the quote the value landed, in points (0 when inside). */
-  miss: number;
-  /** spread + MISS_MULTIPLIER * miss. Lower is better. */
-  cost: number;
+export type NumberScore = {
+  /** ask − bid, in the market's own units. */
+  width: number;
+  /** width ÷ max(value, 1). */
+  relativeWidth: number;
   position: Position;
+  /** 0–100; always 0 when the value is outside the quote. */
+  score: number;
 };
 
-/** Score one resolved quote. A value exactly on the bid or ask counts as inside. */
-export function numberCost(bid: number, ask: number, value: number): NumberCost {
+/** The score for a quote `width` wide when the value lands inside it. */
+export function insideScore(width: number, value: number): number {
+  if (!Number.isFinite(width) || width < 0) {
+    throw new RangeError(`insideScore: width must be a finite number >= 0 (got ${width})`);
+  }
+  validateValue(value);
+  const ratio = (WIDTH_K * width) / Math.max(value, 1);
+  return 100 / (1 + ratio * ratio);
+}
+
+/** Score one resolved quote. */
+export function numberScore(bid: number, ask: number, value: number): NumberScore {
   validateQuote(bid, ask);
-  if (!Number.isFinite(value) || value < 0) {
-    throw new RangeError(`numberCost: value must be a finite number >= 0 (got ${value})`);
-  }
-  const spread = 100 * (t(ask) - t(bid));
-  let position: Position;
-  let miss: number;
-  if (value < bid) {
-    position = 'below';
-    miss = 100 * (t(bid) - t(value));
-  } else if (value > ask) {
-    position = 'above';
-    miss = 100 * (t(value) - t(ask));
-  } else {
-    position = 'inside';
-    miss = 0;
-  }
-  return { spread, miss, cost: spread + MISS_MULTIPLIER * miss, position };
+  validateValue(value);
+  const width = ask - bid;
+  let position: Position = 'inside';
+  if (value < bid) position = 'below';
+  else if (value > ask) position = 'above';
+  return {
+    width,
+    relativeWidth: width / Math.max(value, 1),
+    position,
+    score: position === 'inside' ? insideScore(width, value) : 0,
+  };
+}
+
+/** How wide a quote is compared with its midpoint (18 @ 24 → 0.286), for showing before it settles. */
+export function quoteWidthShare(bid: number, ask: number): number {
+  validateQuote(bid, ask);
+  return (ask - bid) / Math.max((bid + ask) / 2, 1);
+}
+
+/** What a quote would score if the answer landed exactly on its midpoint. */
+export function midpointScore(bid: number, ask: number): number {
+  validateQuote(bid, ask);
+  return insideScore(ask - bid, (bid + ask) / 2);
 }
 
 export type NumberSummary = {
   n: number;
-  /** Mean cost per quote (lower is better). */
-  averageCost: number;
-  /** Mean quote width in points. */
-  averageSpread: number;
-  /** Share of values that landed inside the quote; ~50% is the target. */
+  /** Mean score, 0–100 (higher is better). */
+  averageScore: number;
+  /** Share of values that landed inside the quote. */
   hitRate: number;
-  /** 95% Wilson interval for hitRate. */
-  hitLow: number;
-  hitHigh: number;
   /** Share of values below the bid. */
   below: number;
   /** Share of values inside the quote (same as hitRate). */
   inside: number;
   /** Share of values above the ask. */
   above: number;
-  /** Mean miss in points over the quotes that missed; null if none missed. */
-  averageMissWhenMissed: number | null;
+  /** Mean of width ÷ max(answer, 1). */
+  averageRelativeWidth: number;
+  /** Mean score over the quotes the value landed inside; null if none did. */
+  averageScoreWhenInside: number | null;
 };
 
 /** Aggregate statistics for a set of resolved Number quotes. Returns null for empty input. */
@@ -83,49 +90,35 @@ export function summarizeNumber(items: readonly NumberItem[]): NumberSummary | n
   const n = items.length;
   if (n === 0) return null;
 
-  const costs: number[] = [];
-  const spreads: number[] = [];
-  const misses: number[] = [];
+  const scores: number[] = [];
+  const relativeWidths: number[] = [];
+  const insideScores: number[] = [];
   let below = 0;
   let inside = 0;
   let above = 0;
 
   for (const { bid, ask, value } of items) {
-    const r = numberCost(bid, ask, value);
-    costs.push(r.cost);
-    spreads.push(r.spread);
+    const r = numberScore(bid, ask, value);
+    scores.push(r.score);
+    relativeWidths.push(r.relativeWidth);
     if (r.position === 'below') below++;
     else if (r.position === 'above') above++;
-    else inside++;
-    if (r.position !== 'inside') misses.push(r.miss);
+    else {
+      inside++;
+      insideScores.push(r.score);
+    }
   }
 
-  const ci = wilsonInterval(inside, n);
   return {
     n,
-    averageCost: mean(costs),
-    averageSpread: mean(spreads),
+    averageScore: mean(scores),
     hitRate: inside / n,
-    hitLow: ci.low,
-    hitHigh: ci.high,
     below: below / n,
     inside: inside / n,
     above: above / n,
-    averageMissWhenMissed: misses.length === 0 ? null : mean(misses),
+    averageRelativeWidth: mean(relativeWidths),
+    averageScoreWhenInside: insideScores.length === 0 ? null : mean(insideScores),
   };
-}
-
-export type WidthVerdict = { kind: 'insufficient' | 'too-tight' | 'too-wide' | 'about-right' };
-
-/**
- * Are the quotes the right width? Only says too tight / too wide when the 95% interval
- * for the hit rate excludes 50%. Needs at least 5 resolved quotes.
- */
-export function widthVerdict(summary: NumberSummary | null): WidthVerdict {
-  if (summary === null || summary.n < 5) return { kind: 'insufficient' };
-  if (summary.hitHigh < 0.5) return { kind: 'too-tight' };
-  if (summary.hitLow > 0.5) return { kind: 'too-wide' };
-  return { kind: 'about-right' };
 }
 
 function validateQuote(bid: number, ask: number): void {
@@ -137,5 +130,11 @@ function validateQuote(bid: number, ask: number): void {
   }
   if (ask < bid) {
     throw new RangeError(`ask must be >= bid (got ${bid} @ ${ask})`);
+  }
+}
+
+function validateValue(value: number): void {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new RangeError(`value must be a finite number >= 0 (got ${value})`);
   }
 }

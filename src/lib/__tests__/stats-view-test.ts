@@ -20,7 +20,6 @@ import {
   settledInOrder,
   settledTags,
   trendDomain,
-  widthText,
 } from '../stats-view';
 
 function market(overrides: Partial<Market>): Market {
@@ -78,10 +77,10 @@ const settledYesNo = (id: number, initialPrice: number, outcome: 0 | 1, d: numbe
 const settledNumber = (id: number, value: number, d: number, extra: Partial<Market> = {}) =>
   numberMarket({ id, status: 'settled', settledValue: value, settledAt: day(d), ...extra });
 
-// 18 @ 24 with the value inside: spread = 100 · ln(25/19) ≈ 27.444, no miss.
-const INSIDE_COST = 100 * Math.log(25 / 19);
-// 18 @ 24 with the value 30 (above): 27.444 + 4 · 100 · ln(31/25) ≈ 27.444 + 86.045 = 113.488.
-const ABOVE_COST = INSIDE_COST + 400 * Math.log(31 / 25);
+// 18 @ 24 with the value 20 (inside): width 6 is 30% of the answer, which scores 50.
+const INSIDE_SCORE = 100 / (1 + ((10 / 3) * (6 / 20)) ** 2);
+// Any value outside the quote scores 0.
+const OUTSIDE_SCORE = 0;
 
 describe('settledInOrder', () => {
   it('keeps settled markets only, oldest settlement first, ties by id', () => {
@@ -172,13 +171,13 @@ describe('binaryTrend', () => {
 });
 
 describe('numberTrend', () => {
-  it('is the rolling average cost in settlement order', () => {
+  it('is the rolling average score in settlement order', () => {
     const markets = [settledNumber(2, 30, 2), settledNumber(1, 20, 1), numberMarket({ id: 3 })];
     const trend = numberTrend(markets, 2);
     expect(trend).toHaveLength(1);
-    // (27.444 + 113.488) / 2 ≈ 70.466
-    expect(trend[0].value).toBeCloseTo((INSIDE_COST + ABOVE_COST) / 2, 10);
-    expect(trend[0].value).toBeCloseTo(70.466, 2);
+    // (50 + 0) / 2 = 25
+    expect(trend[0].value).toBeCloseTo((INSIDE_SCORE + OUTSIDE_SCORE) / 2, 10);
+    expect(trend[0].value).toBeCloseTo(25, 10);
     expect(numberTrend(markets)).toEqual([]);
   });
 });
@@ -203,8 +202,8 @@ describe('byTag', () => {
     ]);
   });
 
-  it('averages cost per tag for Number markets', () => {
-    expect(byTag(markets, 'number')).toEqual([{ tag: 'work', n: 1, score: expect.closeTo(INSIDE_COST, 10) }]);
+  it('averages scores per tag for Number markets', () => {
+    expect(byTag(markets, 'number')).toEqual([{ tag: 'work', n: 1, score: expect.closeTo(INSIDE_SCORE, 10) }]);
   });
 
   it('is empty when nothing settled is tagged', () => {
@@ -234,15 +233,14 @@ describe('requoteEffect', () => {
     expect(requoteEffect([settledYesNo(3, 0.5, 1, 3)], 'binary')).toBeNull();
   });
 
-  it('scores Number markets by cost', () => {
-    // Start 18 @ 24, value 20 → 27.444. Final 19 @ 22, value 20 inside → 100 · ln(23/20) ≈ 13.976.
+  it('scores Number markets by their 0–100 score', () => {
+    // Start 18 @ 24, value 20 → 50. Final 19 @ 22, value 20: width 3 is 15% of 20 → 100 / (1 + 0.5²) = 80.
     const effect = requoteEffect([settledNumber(6, 20, 5, { bid: 19, ask: 22, quoteCount: 2 })], 'number');
     expect(effect).toEqual({
       n: 1,
-      initial: expect.closeTo(INSIDE_COST, 10),
-      final: expect.closeTo(100 * Math.log(23 / 20), 10),
+      initial: expect.closeTo(INSIDE_SCORE, 10),
+      final: expect.closeTo(80, 10),
     });
-    expect(effect?.final).toBeCloseTo(13.976, 3);
   });
 });
 
@@ -311,15 +309,6 @@ describe('display text', () => {
     expect(confidenceText({ kind: 'insufficient' })).toBe('Settle at least 5 markets for a verdict');
   });
 
-  it('describes width verdicts', () => {
-    expect(widthText({ kind: 'too-tight' })).toBe(
-      'Quotes too tight — the answer lands outside more than half the time. Widen them.',
-    );
-    expect(widthText({ kind: 'too-wide' })).toBe('Quotes too wide — you’re paying for spread you don’t need.');
-    expect(widthText({ kind: 'about-right' })).toMatch(/^Width about right/);
-    expect(widthText({ kind: 'insufficient' })).toBe('Settle at least 5 markets for a verdict');
-  });
-
   it('warns about small samples below 20', () => {
     expect(noiseWarning(0)).toBeNull();
     expect(noiseWarning(1)).toBe('Based on 1 settled market — numbers are noisy until about 20.');
@@ -337,6 +326,13 @@ describe('display text', () => {
     // 27.44 and 27.4449 both show as 27.4.
     expect(requoteLine({ n: 1, initial: 27.44, final: 27.4449 }, 1)).toBe(
       'Starting quotes: 27.4 · Final quotes: 27.4 — re-quoting made no difference',
+    );
+    // Number scores: higher is better.
+    expect(requoteLine({ n: 1, initial: 50, final: 80 }, 0, true)).toBe(
+      'Starting quotes: 50 · Final quotes: 80 — re-quoting helped',
+    );
+    expect(requoteLine({ n: 1, initial: 80, final: 50 }, 0, true)).toBe(
+      'Starting quotes: 80 · Final quotes: 50 — re-quoting hurt',
     );
   });
 });

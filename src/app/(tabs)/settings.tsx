@@ -6,13 +6,15 @@ import { ActivityIndicator, Platform, StyleSheet, Switch, View } from 'react-nat
 import { Button } from '@/components/button';
 import { Card } from '@/components/card';
 import { ScrollScreen } from '@/components/screen';
+import { ScreenTitle } from '@/components/screen-title';
+import { Segmented } from '@/components/segmented';
 import { ThemedText } from '@/components/themed-text';
 import { TimeField } from '@/components/time-field';
 import { Spacing } from '@/constants/theme';
 import { exportData } from '@/db/backup';
 import { listMarkets } from '@/db/markets';
-import { getReminderSettings } from '@/db/settings';
-import type { ReminderSettings } from '@/db/types';
+import { getReminderSettings, getThemePreference, saveThemePreference } from '@/db/settings';
+import type { ReminderSettings, ThemePreference } from '@/db/types';
 import { useQuery } from '@/hooks/use-query';
 import { useTheme } from '@/hooks/use-theme';
 import {
@@ -29,6 +31,12 @@ import { formatTime, todayString } from '@/lib/dates';
 import { DEMO_TAG } from '@/lib/demo-data';
 import { errorMessage } from '@/lib/errors';
 import { ensureReminderPermission } from '@/lib/reminders';
+
+const THEME_OPTIONS: readonly { value: ThemePreference; label: string }[] = [
+  { value: 'system', label: 'System' },
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+];
 
 function countMarkets(n: number): string {
   return `${n} market${n === 1 ? '' : 's'}`;
@@ -58,15 +66,16 @@ export default function SettingsScreen() {
   const theme = useTheme();
   const { data: settings } = useQuery(getReminderSettings, []);
   const { data: markets } = useQuery(listMarkets, []);
+  const { data: themePreference } = useQuery(getThemePreference, []);
   /** What's running right now (e.g. "export"), so buttons can't be pressed twice. */
   const [busy, setBusy] = useState<string | null>(null);
   /** The reminder settings being saved, shown straight away instead of waiting for the save. */
   const [pendingReminders, setPendingReminders] = useState<ReminderSettings | null>(null);
 
-  if (settings === undefined || markets === undefined) {
+  if (settings === undefined || markets === undefined || themePreference === undefined) {
     return (
       <ScrollScreen safeTop>
-        <ThemedText type="title">Settings</ThemedText>
+        <ScreenTitle title="Settings" />
         <ActivityIndicator color={theme.tint} />
       </ScrollScreen>
     );
@@ -177,7 +186,18 @@ export default function SettingsScreen() {
 
   return (
     <ScrollScreen safeTop>
-      <ThemedText type="title">Settings</ThemedText>
+      <ScreenTitle title="Settings" />
+
+      <Section title="Appearance">
+        <Segmented
+          options={THEME_OPTIONS}
+          value={themePreference}
+          onChange={(value) => {
+            run('theme', 'change the appearance', () => saveThemePreference(db, value));
+          }}
+        />
+        <Note>System follows your phone’s light or dark setting.</Note>
+      </Section>
 
       <Section title="Reminders">
         <View style={styles.switchRow}>
@@ -245,13 +265,14 @@ export default function SettingsScreen() {
       <Section title="About">
         <ThemedText type="smallBold">{`Make a Market ${version}`}</ThemedText>
         <Note>
-          Yes/No markets are scored by Brier score on your starting price: (price − outcome)², where 0 is perfect and
-          a 50% guess scores 0.250.
+          Yes/No markets score 100 − 200 × Brier on your starting price, where the Brier score is (price − outcome)²:
+          a 50% quote scores 50 and a perfect call 100.
         </Note>
         <Note>
-          Number markets cost spread + 4 × miss, measured on a log scale in points. Quoting your honest 25th and 75th
-          percentiles gives the lowest cost over time.
+          Number markets score 0 if the answer lands outside your quote. If it lands inside, they score 100 ÷ (1 +
+          (3.33 × width ÷ answer)²): close to 100 for a very narrow quote, and 50 when the width is 30% of the answer.
         </Note>
+        <Note>Tap the rating in the top-right corner to see how your overall 0–100 rating is worked out.</Note>
       </Section>
 
       {busy !== null ? <ActivityIndicator color={theme.tint} /> : null}

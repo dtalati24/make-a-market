@@ -3,8 +3,8 @@ import { StyleSheet, View } from 'react-native';
 import { Spacing } from '@/constants/theme';
 import { validateNumberQuote, ValidationError } from '@/db/validation';
 import { useTheme } from '@/hooks/use-theme';
-import { parseNumberInput } from '@/lib/format';
-import { spreadPoints } from '@/scoring';
+import { formatNumber, parseNumberInput } from '@/lib/format';
+import { midpointScore, quoteWidthShare } from '@/scoring';
 
 import { TextField } from './text-field';
 import { ThemedText } from './themed-text';
@@ -22,8 +22,12 @@ function describeQuote(bidText: string, askText: string): { text: string; error:
   } catch (error) {
     return { text: error instanceof ValidationError ? error.message : 'Invalid quote.', error: true };
   }
-  const spread = Math.round(spreadPoints(bid, ask));
-  return { text: `Spread ${spread} pts (about ${spread}% wide)`, error: false };
+  const share = Math.round(quoteWidthShare(bid, ask) * 100);
+  const score = Math.round(midpointScore(bid, ask));
+  return {
+    text: `Width ${formatNumber(ask - bid)} (${share}% of the midpoint) · scores ${score} if the answer lands in the middle`,
+    error: false,
+  };
 }
 
 export function NumberQuoteInput({
@@ -69,8 +73,8 @@ export function NumberQuoteInput({
         </ThemedText>
       ) : null}
       <ThemedText type="small" themeColor="textSecondary">
-        Aim for a range you’re 50% sure will contain the answer. You always pay the spread; if the answer lands
-        outside, you also pay 4× how far it missed.
+        If the answer lands inside your quote you score up to 100, more the narrower the quote is compared with the
+        answer. If it lands outside, you score 0.
       </ThemedText>
     </View>
   );

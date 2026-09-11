@@ -1,154 +1,148 @@
 import {
-  MISS_MULTIPLIER,
-  type NumberItem,
-  type NumberSummary,
-  numberCost,
-  spreadPoints,
+  insideScore,
+  midpointScore,
+  numberScore,
+  quoteWidthShare,
   summarizeNumber,
-  widthVerdict,
+  WIDTH_K,
+  type NumberItem,
 } from '../number';
 
-describe('spreadPoints', () => {
-  it('is 100 * ln((1 + ask) / (1 + bid))', () => {
-    expect(spreadPoints(18, 24)).toBeCloseTo(100 * Math.log(25 / 19), 10); // ≈ 27.4437
-    expect(spreadPoints(18, 24)).toBeCloseTo(27.4437, 4);
-    expect(spreadPoints(0, 9)).toBeCloseTo(100 * Math.log(10), 10); // ≈ 230.2585
-    expect(spreadPoints(5, 5)).toBe(0);
+/** The inside-score formula, written out independently. */
+const expected = (width: number, value: number) => 100 / (1 + ((WIDTH_K * width) / Math.max(value, 1)) ** 2);
+
+describe('insideScore', () => {
+  it('scores a quote 30% as wide as the answer at 50', () => {
+    expect(WIDTH_K).toBeCloseTo(10 / 3, 12);
+    expect(insideScore(6, 20)).toBeCloseTo(50, 10);
+    expect(insideScore(30, 100)).toBeCloseTo(50, 10);
   });
 
-  it('throws on invalid quotes', () => {
-    expect(() => spreadPoints(-1, 5)).toThrow(RangeError);
-    expect(() => spreadPoints(6, 5)).toThrow(RangeError);
-    expect(() => spreadPoints(NaN, 5)).toThrow(RangeError);
-    expect(() => spreadPoints(1, Infinity)).toThrow(RangeError);
-  });
-});
-
-describe('numberCost', () => {
-  it('scores a value above the ask', () => {
-    // spread = 100 ln(25/19) ≈ 27.4437; miss = 100 ln(31/25) ≈ 21.5111
-    // cost = 27.4437 + 4 * 21.5111 ≈ 113.488
-    const r = numberCost(18, 24, 30);
-    expect(MISS_MULTIPLIER).toBe(4);
-    expect(r.position).toBe('above');
-    expect(r.spread).toBeCloseTo(100 * Math.log(25 / 19), 10);
-    expect(r.miss).toBeCloseTo(100 * Math.log(31 / 25), 10);
-    expect(r.cost).toBeCloseTo(100 * Math.log(25 / 19) + 400 * Math.log(31 / 25), 10);
-    expect(r.cost).toBeCloseTo(113.488, 3);
+  it('is 100 for an exact quote and falls towards 0 as the quote widens', () => {
+    expect(insideScore(0, 20)).toBe(100);
+    // Width 2 on 20: ratio (10/3)(2/20) = 1/3, so 100 / (1 + 1/9) = 90.
+    expect(insideScore(2, 20)).toBeCloseTo(90, 10);
+    // Like 1 @ 100000 with an answer of 500.
+    expect(insideScore(99999, 500)).toBeLessThan(0.001);
+    let previous = Infinity;
+    for (const width of [0, 1, 2, 5, 10, 20, 50, 100]) {
+      const score = insideScore(width, 20);
+      expect(score).toBeLessThan(previous);
+      expect(score).toBeGreaterThan(0);
+      previous = score;
+    }
   });
 
-  it('scores a value inside the quote as just the spread', () => {
-    const r = numberCost(18, 24, 20);
-    expect(r.position).toBe('inside');
-    expect(r.miss).toBe(0);
-    expect(r.cost).toBe(r.spread);
-    expect(r.cost).toBeCloseTo(100 * Math.log(25 / 19), 10);
-  });
-
-  it('scores a value below the bid', () => {
-    // miss = 100 (ln 19 - ln 11) = 100 ln(19/11) ≈ 54.6544
-    const r = numberCost(18, 24, 10);
-    expect(r.position).toBe('below');
-    expect(r.miss).toBeCloseTo(100 * Math.log(19 / 11), 10);
-    expect(r.cost).toBeCloseTo(100 * Math.log(25 / 19) + 400 * Math.log(19 / 11), 10);
-  });
-
-  it('treats both boundaries as inside', () => {
-    expect(numberCost(18, 24, 18)).toMatchObject({ position: 'inside', miss: 0 });
-    expect(numberCost(18, 24, 24)).toMatchObject({ position: 'inside', miss: 0 });
-  });
-
-  it('handles a zero-width quote', () => {
-    expect(numberCost(5, 5, 5)).toEqual({ spread: 0, miss: 0, cost: 0, position: 'inside' });
-    const r = numberCost(5, 5, 6);
-    expect(r.position).toBe('above');
-    expect(r.miss).toBeCloseTo(100 * Math.log(7 / 6), 10); // ≈ 15.4151
-    expect(r.cost).toBeCloseTo(400 * Math.log(7 / 6), 10);
-  });
-
-  it('handles a value of 0', () => {
-    // inside [0, 1]: spread = 100 ln 2
-    expect(numberCost(0, 1, 0)).toMatchObject({ position: 'inside', miss: 0 });
-    expect(numberCost(0, 1, 0).spread).toBeCloseTo(100 * Math.log(2), 10);
-    // below [1, 2]: miss = 100 (ln 2 - ln 1) = 100 ln 2 ≈ 69.3147
-    const r = numberCost(1, 2, 0);
-    expect(r.position).toBe('below');
-    expect(r.miss).toBeCloseTo(100 * Math.log(2), 10);
-    expect(numberCost(0, 0, 0)).toEqual({ spread: 0, miss: 0, cost: 0, position: 'inside' });
+  it('divides by at least 1, so an answer of 0 works', () => {
+    expect(insideScore(0, 0)).toBe(100);
+    // Width 1 on an answer of 0 is treated as width 1 on 1: ratio 10/3, so 100 / (1 + 100/9) ≈ 8.26.
+    expect(insideScore(1, 0)).toBeCloseTo(100 / (1 + 100 / 9), 10);
+    expect(insideScore(1, 0)).toBeCloseTo(8.257, 3);
+    expect(insideScore(1, 0.5)).toBeCloseTo(insideScore(1, 1), 12);
   });
 
   it('throws on invalid input', () => {
-    expect(() => numberCost(-1, 5, 3)).toThrow(RangeError);
-    expect(() => numberCost(6, 5, 3)).toThrow(RangeError);
-    expect(() => numberCost(NaN, 5, 3)).toThrow(RangeError);
-    expect(() => numberCost(1, NaN, 3)).toThrow(RangeError);
-    expect(() => numberCost(1, 5, NaN)).toThrow(RangeError);
-    expect(() => numberCost(1, 5, -1)).toThrow(RangeError);
-    expect(() => numberCost(1, 5, Infinity)).toThrow(RangeError);
+    expect(() => insideScore(-1, 5)).toThrow(RangeError);
+    expect(() => insideScore(NaN, 5)).toThrow(RangeError);
+    expect(() => insideScore(1, -1)).toThrow(RangeError);
+    expect(() => insideScore(1, Infinity)).toThrow(RangeError);
+  });
+});
+
+describe('numberScore', () => {
+  it('scores a value inside the quote by width ÷ answer', () => {
+    const r = numberScore(18, 24, 20);
+    expect(r.position).toBe('inside');
+    expect(r.width).toBe(6);
+    expect(r.relativeWidth).toBeCloseTo(0.3, 12);
+    expect(r.score).toBeCloseTo(50, 10);
+    // The same quote scores more when the answer is bigger: 6 ÷ 23.
+    expect(numberScore(18, 24, 23).score).toBeCloseTo(expected(6, 23), 10);
+    expect(numberScore(18, 24, 23).score).toBeCloseTo(56.943, 3);
   });
 
-  describe('propriety: the optimal quote is the 25th–75th percentile', () => {
-    // V is uniform on {1, 2, ..., 100}. Try every integer quote 1 <= bid <= ask <= 100.
-    //
-    // Hand derivation. Average cost = spread + 4 * mean(miss). The bid and ask terms are
-    // separable, and log1p is monotone, so write d = t(b + 1) - t(b) > 0:
-    //  - Raising the bid b → b + 1 cuts the spread by 100d and raises the miss of each of the
-    //    b values v <= b by 100d, so Δ = 100d * (-1 + 4 * b / 100): negative for b < 25,
-    //    exactly 0 at b = 25, positive for b > 25. Optimal bid ∈ {25, 26} (exact tie).
-    //  - Raising the ask a → a + 1 widens the spread by 100d' and cuts the miss of each of the
-    //    100 - a values v >= a + 1 by 100d', so Δ = 100d' * (1 - 4 * (100 - a) / 100):
-    //    negative for a < 75, 0 at a = 75, positive for a > 75. Optimal ask ∈ {75, 76}.
-    // So the minimisers are exactly the quartile pairs (P(V < bid) ≈ 25%, P(V > ask) ≈ 25%),
-    // which is tighter than the ±2 tolerance. The hit rate at the optimum is between
-    // 50/100 (26 @ 75) and 52/100 (25 @ 76).
-    const values = Array.from({ length: 100 }, (_, i) => i + 1);
-    const avgCost = (bid: number, ask: number) => {
-      let sum = 0;
-      for (const v of values) sum += numberCost(bid, ask, v).cost;
-      return sum / values.length;
-    };
+  it('scores 0 outside the quote, however close', () => {
+    expect(numberScore(18, 24, 30)).toEqual({ width: 6, relativeWidth: 0.2, position: 'above', score: 0 });
+    expect(numberScore(18, 24, 24.01)).toMatchObject({ position: 'above', score: 0 });
+    expect(numberScore(18, 24, 10)).toMatchObject({ position: 'below', score: 0 });
+  });
 
-    let best = { bid: 0, ask: 0, cost: Infinity };
-    for (let bid = 1; bid <= 100; bid++) {
-      for (let ask = bid; ask <= 100; ask++) {
-        const c = avgCost(bid, ask);
-        if (c < best.cost) best = { bid, ask, cost: c };
+  it('treats both boundaries as inside', () => {
+    expect(numberScore(18, 24, 18)).toMatchObject({ position: 'inside', score: expected(6, 18) });
+    expect(numberScore(18, 24, 24)).toMatchObject({ position: 'inside', score: expected(6, 24) });
+  });
+
+  it('handles zero-width quotes and answers of 0', () => {
+    expect(numberScore(5, 5, 5).score).toBe(100);
+    expect(numberScore(5, 5, 6)).toMatchObject({ position: 'above', score: 0 });
+    expect(numberScore(0, 0, 0).score).toBe(100);
+    expect(numberScore(0, 5, 0)).toMatchObject({ position: 'inside', score: expected(5, 0) });
+    expect(numberScore(1, 2, 0)).toMatchObject({ position: 'below', score: 0 });
+  });
+
+  it('throws on invalid input', () => {
+    expect(() => numberScore(-1, 5, 3)).toThrow(RangeError);
+    expect(() => numberScore(6, 5, 3)).toThrow(RangeError);
+    expect(() => numberScore(NaN, 5, 3)).toThrow(RangeError);
+    expect(() => numberScore(1, NaN, 3)).toThrow(RangeError);
+    expect(() => numberScore(1, 5, NaN)).toThrow(RangeError);
+    expect(() => numberScore(1, 5, -1)).toThrow(RangeError);
+    expect(() => numberScore(1, 5, Infinity)).toThrow(RangeError);
+  });
+});
+
+describe('quote previews', () => {
+  it('shows the width as a share of the midpoint', () => {
+    expect(quoteWidthShare(18, 24)).toBeCloseTo(6 / 21, 12);
+    expect(quoteWidthShare(5, 5)).toBe(0);
+    expect(quoteWidthShare(0, 1)).toBe(1); // midpoint 0.5 is divided as 1
+  });
+
+  it('scores the quote as if the answer landed on the midpoint', () => {
+    expect(midpointScore(18, 24)).toBeCloseTo(expected(6, 21), 12);
+    expect(midpointScore(18, 24)).toBeCloseTo(52.44, 2);
+    expect(midpointScore(7, 7)).toBe(100);
+  });
+});
+
+describe('the best quote depends on how sure you are', () => {
+  // Belief: the answer is equally likely to be any whole number in a range. Find the best
+  // whole-number quote by brute force.
+  const range = (lo: number, hi: number) => Array.from({ length: hi - lo + 1 }, (_, i) => lo + i);
+  function best(values: number[]) {
+    const lo = values[0];
+    const hi = values[values.length - 1];
+    let top = { bid: lo, ask: lo, average: -1 };
+    for (let bid = lo; bid <= hi; bid++) {
+      for (let ask = bid; ask <= hi; ask++) {
+        let sum = 0;
+        for (const v of values) sum += numberScore(bid, ask, v).score;
+        const average = sum / values.length;
+        if (average > top.average) top = { bid, ask, average };
       }
     }
+    const coverage = values.filter((v) => v >= top.bid && v <= top.ask).length / values.length;
+    return { ...top, coverage };
+  }
 
-    it('lands on the quartiles', () => {
-      expect([25, 26]).toContain(best.bid);
-      expect([75, 76]).toContain(best.ask);
-    });
+  it('covers nearly everything when sure, and much less when unsure', () => {
+    expect(best(range(95, 105)).coverage).toBeGreaterThan(0.8);
+    expect(best(range(50, 150)).coverage).toBeLessThan(0.5);
+  });
 
-    it('is a tie across the quartile pairs and strictly worse just outside', () => {
-      for (const bid of [25, 26]) {
-        for (const ask of [75, 76]) {
-          expect(Math.abs(avgCost(bid, ask) - best.cost)).toBeLessThan(1e-9);
-        }
-      }
-      expect(avgCost(24, 75)).toBeGreaterThan(best.cost + 1e-6);
-      expect(avgCost(27, 75)).toBeGreaterThan(best.cost + 1e-6);
-      expect(avgCost(25, 74)).toBeGreaterThan(best.cost + 1e-6);
-      expect(avgCost(25, 77)).toBeGreaterThan(best.cost + 1e-6);
-    });
-
-    it('hits about half the time', () => {
-      const s = summarizeNumber(values.map((value) => ({ bid: best.bid, ask: best.ask, value })))!;
-      expect(s.hitRate).toBeGreaterThanOrEqual(0.45);
-      expect(s.hitRate).toBeLessThanOrEqual(0.55);
-      expect(s.hitRate).toBeGreaterThanOrEqual(0.5); // hand bound: 50..52 of 100
-      expect(s.hitRate).toBeLessThanOrEqual(0.52);
-    });
+  it('never rewards a huge quote', () => {
+    const values = range(50, 150);
+    const average = values.reduce((sum, v) => sum + numberScore(1, 100000, v).score, 0) / values.length;
+    expect(average).toBeLessThan(0.01);
   });
 });
 
 describe('summarizeNumber', () => {
-  // A (18,24,20) inside  spread 100 ln(25/19)
-  // B (18,24,30) above   spread 100 ln(25/19), miss 100 ln(31/25)
-  // C (18,24,10) below   spread 100 ln(25/19), miss 100 ln(19/11)
-  // D (0,9,4)    inside  spread 100 ln 10
-  // E (9,9,9)    inside  spread 0
+  // A (18,24,20) inside, width 6 on 20 → 50
+  // B (18,24,30) above → 0
+  // C (18,24,10) below → 0
+  // D (0,9,4)    inside, width 9 on 4 → 100 / (1 + 7.5²)
+  // E (9,9,9)    inside, exact → 100
   const items: NumberItem[] = [
     { bid: 18, ask: 24, value: 20 },
     { bid: 18, ask: 24, value: 30 },
@@ -157,88 +151,29 @@ describe('summarizeNumber', () => {
     { bid: 9, ask: 9, value: 9 },
   ];
   const s = summarizeNumber(items)!;
-  const spreadSum = 300 * Math.log(25 / 19) + 100 * Math.log(10); // ≈ 82.3311 + 230.2585 = 312.5896
-  const missB = 100 * Math.log(31 / 25); // ≈ 21.5111
-  const missC = 100 * Math.log(19 / 11); // ≈ 54.6544
+  const scoreD = 100 / (1 + 7.5 ** 2);
 
   it('computes every field', () => {
     expect(s.n).toBe(5);
-    expect(s.averageSpread).toBeCloseTo(spreadSum / 5, 10); // ≈ 62.5179
-    // (312.5896 + 4 * (21.5111 + 54.6544)) / 5 = 617.2516 / 5 ≈ 123.4503
-    expect(s.averageCost).toBeCloseTo((spreadSum + 4 * (missB + missC)) / 5, 10);
-    expect(s.averageCost).toBeCloseTo(123.4503, 3);
-    expect(s.hitRate).toBeCloseTo(0.6, 12); // 3 / 5
+    expect(s.averageScore).toBeCloseTo((50 + 0 + 0 + scoreD + 100) / 5, 10);
+    expect(s.hitRate).toBeCloseTo(0.6, 12);
     expect(s.inside).toBeCloseTo(0.6, 12);
-    expect(s.below).toBeCloseTo(0.2, 12); // 1 / 5
-    expect(s.above).toBeCloseTo(0.2, 12); // 1 / 5
-    // Wilson(3, 5): center 0.98416 / 1.76832, half 1.96 * sqrt(0.086416) / 1.76832
-    const center = 0.98416 / 1.76832;
-    const half = (1.96 * Math.sqrt(0.086416)) / 1.76832;
-    expect(s.hitLow).toBeCloseTo(center - half, 10); // ≈ 0.230714
-    expect(s.hitHigh).toBeCloseTo(center + half, 10); // ≈ 0.882376
-    expect(s.averageMissWhenMissed).toBeCloseTo((missB + missC) / 2, 10); // ≈ 38.0828
+    expect(s.below).toBeCloseTo(0.2, 12);
+    expect(s.above).toBeCloseTo(0.2, 12);
+    // Width ÷ answer: 6/20, 6/30, 6/10, 9/4, 0.
+    expect(s.averageRelativeWidth).toBeCloseTo((0.3 + 0.2 + 0.6 + 2.25 + 0) / 5, 12);
+    expect(s.averageScoreWhenInside).toBeCloseTo((50 + scoreD + 100) / 3, 10);
   });
 
-  it('returns null averageMissWhenMissed when everything is inside', () => {
-    const r = summarizeNumber([
-      { bid: 1, ask: 3, value: 2 },
-      { bid: 1, ask: 3, value: 3 },
-    ])!;
-    expect(r.averageMissWhenMissed).toBeNull();
-    expect(r.hitRate).toBe(1);
-    expect(r.averageCost).toBeCloseTo(100 * Math.log(4 / 2), 10); // spread only
+  it('returns null averageScoreWhenInside when nothing landed inside', () => {
+    const r = summarizeNumber([{ bid: 1, ask: 3, value: 5 }])!;
+    expect(r.averageScoreWhenInside).toBeNull();
+    expect(r.averageScore).toBe(0);
+    expect(r.hitRate).toBe(0);
   });
 
   it('returns null for empty input and propagates invalid items', () => {
     expect(summarizeNumber([])).toBeNull();
     expect(() => summarizeNumber([{ bid: 5, ask: 1, value: 2 }])).toThrow(RangeError);
-  });
-});
-
-describe('widthVerdict', () => {
-  const quotes = (inside: number, outside: number): NumberItem[] => [
-    ...Array.from({ length: inside }, () => ({ bid: 10, ask: 20, value: 15 })),
-    ...Array.from({ length: outside }, () => ({ bid: 10, ask: 20, value: 30 })),
-  ];
-
-  it('is insufficient for null or n < 5', () => {
-    expect(widthVerdict(null)).toEqual({ kind: 'insufficient' });
-    expect(widthVerdict(summarizeNumber(quotes(0, 4)))).toEqual({ kind: 'insufficient' });
-  });
-
-  it('is too-tight when the whole hit-rate interval is below 50%', () => {
-    // 0 of 10: hitHigh = 3.8416 / 13.8416 ≈ 0.2775 < 0.5
-    expect(widthVerdict(summarizeNumber(quotes(0, 10)))).toEqual({ kind: 'too-tight' });
-  });
-
-  it('is too-wide when the whole hit-rate interval is above 50%', () => {
-    // 10 of 10: hitLow = 10 / 13.8416 ≈ 0.7225 > 0.5
-    expect(widthVerdict(summarizeNumber(quotes(10, 0)))).toEqual({ kind: 'too-wide' });
-  });
-
-  it('is about-right when the interval contains 50%', () => {
-    // 5 of 10: [0.2366, 0.7634]
-    expect(widthVerdict(summarizeNumber(quotes(5, 5)))).toEqual({ kind: 'about-right' });
-    // 1 of 5: [0.0362, 0.6244] still contains 0.5 — too few quotes to call it
-    expect(widthVerdict(summarizeNumber(quotes(1, 4)))).toEqual({ kind: 'about-right' });
-  });
-
-  it('checks the thresholds directly', () => {
-    const base: NumberSummary = {
-      n: 5,
-      averageCost: 0,
-      averageSpread: 0,
-      hitRate: 0.5,
-      hitLow: 0.2,
-      hitHigh: 0.8,
-      below: 0.25,
-      inside: 0.5,
-      above: 0.25,
-      averageMissWhenMissed: null,
-    };
-    expect(widthVerdict({ ...base, hitHigh: 0.4999 })).toEqual({ kind: 'too-tight' });
-    expect(widthVerdict({ ...base, hitHigh: 0.5 })).toEqual({ kind: 'about-right' });
-    expect(widthVerdict({ ...base, hitLow: 0.5001 })).toEqual({ kind: 'too-wide' });
-    expect(widthVerdict({ ...base, hitLow: 0.5 })).toEqual({ kind: 'about-right' });
   });
 });

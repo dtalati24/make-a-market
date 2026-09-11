@@ -1,7 +1,7 @@
 import type { Market } from '@/db/types';
-import { brierScore, numberCost, type NumberCost } from '@/scoring';
+import { binaryPoints, brierScore, numberScore, type NumberScore } from '@/scoring';
 
-import { formatNumber, formatPrice } from './format';
+import { formatNumber, formatPoints, formatPrice } from './format';
 
 /* Pure helpers that turn a Market into what the screens display. */
 
@@ -56,39 +56,41 @@ export function outcomeLabel(market: Market): string | null {
 }
 
 export type MarketScore =
-  | { kind: 'binary'; brier: number; good: boolean }
-  | { kind: 'number'; cost: NumberCost; good: boolean };
+  | { kind: 'binary'; brier: number; points: number; good: boolean }
+  | { kind: 'number'; result: NumberScore; points: number; good: boolean };
 
 /**
- * Score of a settled market, from its starting quote. "Good" means better than
- * a 50/50 guess (Yes/No) or the value landing inside the quote (Number).
+ * Score of a settled market, from its starting quote. `points` is its score on the rating
+ * scale (Yes/No: 100 − 200 × Brier; Number: 0–100). "Good" means above 50, i.e. better than
+ * a 50/50 guess on a Yes/No market.
  */
 export function marketScore(market: Market): MarketScore | null {
   if (market.status !== 'settled') return null;
   if (market.kind === 'binary') {
     if (market.outcome === null) return null;
-    const brier = brierScore(required(market.initialPrice, 'initial price'), market.outcome);
-    return { kind: 'binary', brier, good: brier < 0.25 };
+    const p = required(market.initialPrice, 'initial price');
+    const points = binaryPoints(p, market.outcome);
+    return { kind: 'binary', brier: brierScore(p, market.outcome), points, good: points > 50 };
   }
-  const cost = numberCost(
+  const result = numberScore(
     required(market.initialBid, 'initial bid'),
     required(market.initialAsk, 'initial ask'),
     required(market.settledValue, 'settled value'),
   );
-  return { kind: 'number', cost, good: cost.position === 'inside' };
+  return { kind: 'number', result, points: result.score, good: result.score > 50 };
 }
 
-/** What a Number market would cost if it settled at `value` (for the settle preview). */
-export function numberCostAt(market: Market, value: number): NumberCost {
-  return numberCost(required(market.initialBid, 'initial bid'), required(market.initialAsk, 'initial ask'), value);
+/** How a Number market would score if it settled at `value` (for the settle preview). */
+export function numberScoreAt(market: Market, value: number): NumberScore {
+  return numberScore(required(market.initialBid, 'initial bid'), required(market.initialAsk, 'initial ask'), value);
 }
 
-export function positionPhrase(position: NumberCost['position']): string {
+export function positionPhrase(position: NumberScore['position']): string {
   return { below: 'below your bid', inside: 'inside your quote', above: 'above your ask' }[position];
 }
 
 export function scoreLabel(score: MarketScore): string {
-  return score.kind === 'binary' ? `Brier ${score.brier.toFixed(3)}` : `Cost ${Math.round(score.cost.cost)}`;
+  return `Score ${formatPoints(score.points)}`;
 }
 
 export type TypeFilter = 'all' | 'binary' | 'number' | 'decision';

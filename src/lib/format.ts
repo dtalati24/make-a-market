@@ -37,3 +37,9 @@ export function formatScore(value: number, digits: number): string {
 export function formatPercent(share: number): string {
   return `${Math.round(share * 100)}%`;
 }
+
+/** A score rounded to a whole number, with a proper minus sign: 82, −62. */
+export function formatPoints(value: number): string {
+  const rounded = Math.round(value);
+  return rounded < 0 ? `−${-rounded}` : String(Math.abs(rounded));
+}

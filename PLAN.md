@@ -67,39 +67,33 @@ p = your price ÷ 100, capped at 0.01–0.99. o = 1 if YES, 0 if NO.
 Values must be **≥ 0**. For things that can go negative, make a market on the level
 instead of the change (e.g. "my weight on Dec 1" rather than "weight change").
 
-Everything is measured on a log(1 + value) scale, so 10 points ≈ 10%. Written as
-t(x) = ln(1 + x):
+**Score of a market, 0–100** (higher is better):
 
-- **Spread** = 100 · (t(ask) − t(bid)). This is how wide you quoted.
-- **Miss** = 100 · how far outside your quote the real value landed, on the same scale:
-  - t(bid) − t(value) if it landed below your bid
-  - t(value) − t(ask) if it landed above your ask
-  - 0 if it landed inside
-- **Cost of a market** = spread + 4 × miss. Lower is better.
-  - If the value lands inside, the cost depends only on how tight you were.
-  - If it lands outside, the cost depends on how tight you were and how far off it was.
-- The best strategy is to quote your honest 25th and 75th percentiles, so the real value
-  should land inside about **half** the time. A simulation confirmed this: the best quote
-  was 15.25 @ 26.25 against true quartiles of 15.27 @ 26.19, and it caught the value 50.4%
-  of the time.
-- **Summary figures:**
-  - number settled
-  - **average cost** (the Number rating)
-  - average spread
-  - **hit rate** (target 50%) with a 95% Wilson interval
-  - share landing below / inside / above (target 25 / 50 / 25)
-  - average miss when missed
-- **Verdict:**
-  - fewer than 5 settled → "not enough data yet"
-  - Wilson upper bound < 50% → "quotes too tight"
-  - Wilson lower bound > 50% → "quotes too wide"
-  - otherwise → "width about right"
-- **Trend:** rolling average cost over the last 10 settled markets.
+- **0** if the real value lands outside your quote (a value exactly on the bid or ask
+  counts as inside).
+- **100 ÷ (1 + (k × width ÷ max(value, 1))²)** if it lands inside, with k = 10/3, so a
+  quote whose width is 30% of the answer scores 50, an exact quote scores 100, and one
+  like 1 @ 100000 scores about 0. Answers below 1 are divided by 1.
+- The app gives no coaching on how wide to quote, and the rule has no fixed recipe: a
+  simulation showed the best quote catches the answer ~88–97% of the time when you're
+  sure and only ~12–19% when you're unsure, and neither "always cover X%" nor "always
+  quote ±X%" comes close to quoting each market on its merits. Dividing by the answer
+  doesn't reward quoting low or high (the best window stays centred on your median).
+- **Summary figures:** number settled, **average score**, hit rate, average width ÷
+  answer, share landing below / inside / above, average score when inside.
+- **Trend:** rolling average score over the last 10 settled markets.
 
-### Ratings
+### Rating (0–100)
 
-Each kind of market has its own headline rating: **Brier** for Yes/No and **average cost**
-for Number. They're in different units and aren't merged into one number.
+- Every settled market gets a score: Yes/No = **100 − 200 × Brier** (a 50% quote scores
+  50; a confident wrong call can go below 0); Number = the 0–100 score above.
+- The Yes/No and Number ratings each start at 50 and move towards every new score by
+  gain = max(1 ÷ (markets so far + 5), 1/30). Until the gain reaches 1/30 this is the
+  Bayesian average with a prior of 50 worth 5 markets; after that it follows roughly the
+  last 30 markets. Each has a ~95% ± range.
+- The **overall rating** averages the two, each weighted by n ÷ (n + 5), and is held
+  between 0 and 100. It's shown top right on every screen, red (0) → orange (50) →
+  green (100); tapping it opens the Rating screen.
 
 All scoring lives in pure TypeScript functions (`src/scoring/`), unit-tested against
 hand-calculated values.
@@ -107,7 +101,9 @@ hand-calculated values.
 ## 4. Screens
 
 Bottom tabs: **Markets · Stats · Settings**. Plus a **New market** modal, a **Market**
-detail screen and an **Edit** modal.
+detail screen and an **Edit** modal. The rating badge sits top right on every screen and
+opens a **Rating** screen (overall and per-kind ratings with ± ranges, a chart over time,
+recent markets and how it works).
 
 ### Markets (home)
 - An **Open | Settled** switch at the top.
@@ -127,8 +123,8 @@ detail screen and an **Edit** modal.
 - Question. Number markets also get a unit, e.g. "hours".
 - **Quote:**
   - **Yes/No:** a slider (1–99), quick picks (10/25/50/75/90) and −/+ buttons
-  - **Number:** bid and ask fields, with a live spread readout and the hint "aim for a
-    range you're 50% sure of"
+  - **Number:** bid and ask fields, with a live readout of the width (as % of the
+    midpoint) and what the quote would score if the answer landed in the middle
 - **Decision fields:** options (2 or more), which one you chose, what "worked out" means.
 - **Settle by:** quick picks (1 week, 1 month, 3 months, 6 months, 1 year) or a date picker.
 - **Tags:** tap existing tags or type new ones.
@@ -147,7 +143,8 @@ detail screen and an **Edit** modal.
   - Number: enter the real value.
   - **Void** is available for both. Every option asks for confirmation.
 - After settling, a result card with:
-  - the score breakdown (Yes/No: Brier; Number: spread + 4 × miss = cost)
+  - the score breakdown (Yes/No: 100 − 200 × Brier; Number: 0 outside, the width
+    formula inside) and how much the market moved your rating
   - a post-mortem note
   - for decisions: a 1–5 decision-quality rating
 - **Reopen**, **Edit** and **Delete** (asks for confirmation).
@@ -171,15 +168,15 @@ detail screen and an **Edit** modal.
 
     Decisions rated 3 aren't placed in the grid.
 - **Number:**
-  - headline numbers: settled count, average cost, hit rate, average spread
-  - width verdict
-  - "where the answer landed" bar (below / inside / above vs 25 / 50 / 25)
-  - cost trend
+  - headline numbers: settled count, average score, hit rate, average width ÷ answer
+  - "where the answer landed" bar (below / inside / above), with no targets
+  - score trend
   - by-tag table
   - whether re-quoting helped
 - Below 20 settled markets, a note warns that the numbers are noisy.
 
 ### Settings
+- Appearance: System (follows the phone), Light or Dark.
 - Reminders on/off and time of day (default 9:00 AM).
 - Export as JSON (full backup) or CSV, through the Android share menu.
 - Import a JSON backup. Replaces all data, with confirmation.

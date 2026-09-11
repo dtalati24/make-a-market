@@ -8,6 +8,7 @@ import { TrendChart } from '@/components/charts/trend-chart';
 import { Chip } from '@/components/chip';
 import { EmptyState } from '@/components/empty-state';
 import { ScrollScreen } from '@/components/screen';
+import { ScreenTitle } from '@/components/screen-title';
 import { Segmented } from '@/components/segmented';
 import { StatGrid, StatTile } from '@/components/stat-tile';
 import { ThemedText } from '@/components/themed-text';
@@ -32,20 +33,11 @@ import {
   requoteEffect,
   requoteLine,
   settledTags,
-  widthText,
   type DecisionGrid,
   type RequoteEffect,
   type TagRow,
 } from '@/lib/stats-view';
-import {
-  confidenceVerdict,
-  MISS_MULTIPLIER,
-  summarizeBinary,
-  summarizeNumber,
-  widthVerdict,
-  type BinarySummary,
-  type NumberSummary,
-} from '@/scoring';
+import { confidenceVerdict, summarizeBinary, summarizeNumber, type BinarySummary } from '@/scoring';
 
 const KINDS: readonly { value: MarketKind; label: string }[] = [
   { value: 'binary', label: 'Yes/No' },
@@ -90,7 +82,7 @@ export default function StatsScreen() {
 
   return (
     <ScrollScreen safeTop>
-      <ThemedText type="title">Stats</ThemedText>
+      <ScreenTitle title="Stats" />
       <Segmented options={KINDS} value={kind} onChange={setKind} />
       {tags.length > 0 ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
@@ -311,7 +303,7 @@ function NumberStats({ markets, tag }: { markets: readonly Market[]; tag: string
     return (
       <EmptyState
         title={tag ? `No settled Number markets tagged #${tag}` : 'No settled Number markets yet'}
-        message="Settle a Number market and your average cost, hit rate and where the answers landed show up here. Void markets aren’t scored."
+        message="Settle a Number market and your average score, hit rate and where the answers landed show up here. Void markets aren’t scored."
       />
     );
   }
@@ -325,64 +317,48 @@ function NumberStats({ markets, tag }: { markets: readonly Market[]; tag: string
       <NoiseWarning n={summary.n} />
       <StatGrid>
         <StatTile label="Settled" value={String(summary.n)} caption="void markets excluded" />
-        <StatTile label="Avg cost" value={summary.averageCost.toFixed(1)} caption="lower is better" />
-        <StatTile label="Hit rate" value={formatPercent(summary.hitRate)} caption="target 50%" />
-        <StatTile label="Avg spread" value={`${summary.averageSpread.toFixed(1)} pts`} caption="how wide you quote" />
+        <StatTile label="Avg score" value={summary.averageScore.toFixed(0)} caption="0–100, higher is better" />
+        <StatTile label="Hit rate" value={formatPercent(summary.hitRate)} caption="landed inside your quote" />
+        <StatTile label="Avg width" value={formatPercent(summary.averageRelativeWidth)} caption="width ÷ answer" />
       </StatGrid>
-
-      <WidthCard summary={summary} />
 
       <Card>
         <Caption>Where the answer landed</Caption>
         <LandingBar below={summary.below} inside={summary.inside} above={summary.above} />
         <Note>
-          Quote your honest 25th and 75th percentiles and the answer lands inside half the time, with a quarter on
-          each side.
+          {summary.averageScoreWhenInside === null
+            ? 'None of the answers has landed inside your quote yet. Answers outside score 0.'
+            : `When it landed inside, you scored ${summary.averageScoreWhenInside.toFixed(0)} on average. Answers outside score 0.`}
         </Note>
       </Card>
 
       {trend.length > 0 ? (
         <Card>
-          <Caption>Cost trend</Caption>
-          <Note>{`Average cost over each run of ${TREND_WINDOW} settled markets, oldest to newest. Lower is better.`}</Note>
-          <TrendChart points={trend} formatValue={(value) => value.toFixed(1)} label="Rolling average cost" />
+          <Caption>Score trend</Caption>
+          <Note>{`Average score over each run of ${TREND_WINDOW} settled markets, oldest to newest. Higher is better.`}</Note>
+          <TrendChart points={trend} formatValue={(value) => value.toFixed(0)} label="Rolling average score" />
         </Card>
       ) : null}
 
-      {tagRows.length > 0 ? <ByTagCard rows={tagRows} scoreLabel="Avg cost" digits={1} /> : null}
-      {requote ? <RequoteCard effect={requote} digits={1} /> : null}
+      {tagRows.length > 0 ? <ByTagCard rows={tagRows} scoreLabel="Avg score" digits={0} higherIsBetter /> : null}
+      {requote ? <RequoteCard effect={requote} digits={0} higherIsBetter /> : null}
     </>
-  );
-}
-
-function WidthCard({ summary }: { summary: NumberSummary }) {
-  const theme = useTheme();
-  const verdict = widthVerdict(summary);
-  let color: string = theme.text;
-  if (verdict.kind === 'about-right') color = theme.bid;
-  else if (verdict.kind !== 'insufficient') color = theme.warning;
-
-  return (
-    <Card>
-      <Caption>Quote width</Caption>
-      <ThemedText type="subtitle" style={{ color }}>
-        {widthText(verdict)}
-      </ThemedText>
-      <Note>
-        {`Hit rate ${formatPercent(summary.hitRate)} · 95% range: ${formatPercent(summary.hitLow)}–${formatPercent(summary.hitHigh)} (target 50%)`}
-      </Note>
-      {summary.averageMissWhenMissed !== null ? (
-        <Note>
-          {`When the answer landed outside, it missed by ${summary.averageMissWhenMissed.toFixed(1)} points on average (each point of miss costs ${MISS_MULTIPLIER}).`}
-        </Note>
-      ) : null}
-    </Card>
   );
 }
 
 /* ---------- Shared ---------- */
 
-function ByTagCard({ rows, scoreLabel, digits }: { rows: readonly TagRow[]; scoreLabel: string; digits: number }) {
+function ByTagCard({
+  rows,
+  scoreLabel,
+  digits,
+  higherIsBetter = false,
+}: {
+  rows: readonly TagRow[];
+  scoreLabel: string;
+  digits: number;
+  higherIsBetter?: boolean;
+}) {
   const theme = useTheme();
   return (
     <Card>
@@ -411,18 +387,26 @@ function ByTagCard({ rows, scoreLabel, digits }: { rows: readonly TagRow[]; scor
           </ThemedText>
         </View>
       ))}
-      <Note>Lower is better. A market with several tags counts under each.</Note>
+      <Note>{`${higherIsBetter ? 'Higher' : 'Lower'} is better. A market with several tags counts under each.`}</Note>
     </Card>
   );
 }
 
-function RequoteCard({ effect, digits }: { effect: RequoteEffect; digits: number }) {
+function RequoteCard({
+  effect,
+  digits,
+  higherIsBetter = false,
+}: {
+  effect: RequoteEffect;
+  digits: number;
+  higherIsBetter?: boolean;
+}) {
   return (
     <Card>
       <Caption>Did re-quoting help?</Caption>
-      <ThemedText type="smallBold">{requoteLine(effect, digits)}</ThemedText>
+      <ThemedText type="smallBold">{requoteLine(effect, digits, higherIsBetter)}</ThemedText>
       <Note>
-        {`Over the ${effect.n} settled market${effect.n === 1 ? '' : 's'} you re-quoted. Lower is better. Everything else on this screen scores your starting quotes.`}
+        {`Over the ${effect.n} settled market${effect.n === 1 ? '' : 's'} you re-quoted. ${higherIsBetter ? 'Higher' : 'Lower'} is better. Everything else on this screen scores your starting quotes.`}
       </Note>
     </Card>
   );

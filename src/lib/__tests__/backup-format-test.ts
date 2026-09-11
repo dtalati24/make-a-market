@@ -264,12 +264,12 @@ describe('CSV', () => {
     expect(lines[0]).toBe(CSV_COLUMNS.join(','));
     expect(lines).toHaveLength(6); // header + 4 rows + trailing empty string
     expect(lines[5]).toBe('');
-    // Decision (id 1): settled NO from 70 → Brier 0.49.
+    // Decision (id 1): settled NO from 70 → Brier 0.49 → score 100 − 98 = 2.
     expect(lines[1]).toMatch(/^1,Yes\/No,yes,Take the startup offer,,,70,70,/);
-    expect(lines[1]).toContain(',settled,NO,0.4900,');
-    // Re-quoted Yes/No (id 2): starting 60, current 75, YES → Brier 0.16 on the starting quote.
+    expect(lines[1]).toContain(',settled,NO,2.0,');
+    // Re-quoted Yes/No (id 2): starting 60, current 75, YES → Brier 0.16 on the starting quote → 68.
     expect(lines[2]).toMatch(/^2,Yes\/No,no,Will I get the internship\?,,career,60,75,/);
-    expect(lines[2]).toContain(',settled,YES,0.1600,,Prep paid off.');
+    expect(lines[2]).toContain(',settled,YES,68.0,,Prep paid off.');
     expect(lines[3]).toMatch(/^3,Number,no,Hours of deep work,hours,career; focus,18 @ 24,18 @ 24,2026-09-0\d,2026-09-20,open,,,,$/);
     expect(lines[4]).toMatch(/^4,Yes\/No,no,"'=cmd, ""x""",/);
     expect(lines[4]).toContain(',void,void,,');

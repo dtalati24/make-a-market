@@ -4,12 +4,19 @@ An Android app for keeping yourself honest about predictions. For each question 
 **make a market**:
 
 - **Yes/No markets** — quote one fair price from 1 to 99 (your probability, in %).
-  Scored by Brier score on the starting price: `(price − outcome)²`, where 0 is perfect
-  and a 50% guess scores 0.250.
-- **Number markets** — quote a bid @ ask and pick your own width. When it settles, the
-  cost is `spread + 4 × miss`, measured on a `ln(1 + x)` scale in points. The best
-  long-run play is to quote your honest 25th and 75th percentiles, so the answer lands
-  inside about half the time.
+  Each settled market scores `100 − 200 × Brier` on the starting price, where the Brier
+  score is `(price − outcome)²`: a 50% quote scores 50, a perfect call 100, and a
+  confident wrong call can go below 0.
+- **Number markets** — quote a bid @ ask and pick your own width. If the answer lands
+  outside your quote it scores 0. If it lands inside, it scores
+  `100 ÷ (1 + (3.33 × width ÷ answer)²)`: close to 100 for a very narrow quote, 50 when
+  the width is 30% of the answer, and about 0 for something like 1 @ 100000.
+
+Your overall **rating** (0–100) sits in the top-right corner of every screen, shaded from
+red through orange to green. The Yes/No and Number ratings each start at 50 and move
+towards every new score — a Bayesian average with a prior worth 5 markets that follows
+roughly your last 30 markets — and the overall rating combines the two. Tap it to see the
+breakdown.
 
 Markets can be re-quoted as you learn more (the starting quote is what gets scored),
 settled, voided or reopened. Decisions can be logged as Yes/No markets with options, a
@@ -17,8 +24,8 @@ success criterion and a 1–5 decision-quality rating. The **Stats** tab shows c
 Brier breakdown, trends, by-tag tables and, for Number markets, where the answers landed.
 
 All data stays on the phone (SQLite). **Settings** can export a JSON backup or a CSV
-spreadsheet through the share menu, import a backup, load demo data and set a daily
-settle-by reminder time.
+spreadsheet through the share menu, import a backup, load demo data, set a daily
+settle-by reminder time, and switch between System, Light and Dark appearance.
 
 The full spec is in [PLAN.md](PLAN.md).
 

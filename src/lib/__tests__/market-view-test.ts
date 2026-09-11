@@ -78,25 +78,33 @@ describe('outcomeLabel', () => {
 
 describe('marketScore', () => {
   it('scores Yes/No markets from the starting price', () => {
-    // Re-quoted to 90 later, but the starting 70 is what counts: (0.7 - 1)^2 = 0.09.
+    // Re-quoted to 90 later, but the starting 70 is what counts: (0.7 - 1)^2 = 0.09 → 100 − 18 = 82.
     const score = marketScore(market({ status: 'settled', outcome: 1, initialPrice: 0.7, price: 0.9 }));
-    expect(score).toEqual({ kind: 'binary', brier: expect.closeTo(0.09, 12), good: true });
-    expect(scoreLabel(score!)).toBe('Brier 0.090');
-    // (0.7 - 0)^2 = 0.49 is worse than a 50/50 guess.
-    expect(marketScore(market({ status: 'settled', outcome: 0 }))?.good).toBe(false);
+    expect(score).toEqual({ kind: 'binary', brier: expect.closeTo(0.09, 12), points: expect.closeTo(82, 10), good: true });
+    expect(scoreLabel(score!)).toBe('Score 82');
+    // (0.7 - 0)^2 = 0.49 → 2 points, worse than a 50/50 guess.
+    const wrong = marketScore(market({ status: 'settled', outcome: 0 }));
+    expect(wrong?.good).toBe(false);
+    expect(scoreLabel(wrong!)).toBe('Score 2');
+    // 90% → NO: Brier 0.81 → −62.
+    expect(scoreLabel(marketScore(market({ status: 'settled', outcome: 0, initialPrice: 0.9 }))!)).toBe('Score −62');
   });
 
   it('scores Number markets from the starting quote', () => {
+    // 18 @ 24, answer 20: width is 30% of the answer → 50.
     const inside = marketScore(numberMarket({ status: 'settled', settledValue: 20 }));
     expect(inside?.kind).toBe('number');
-    expect(inside?.good).toBe(true);
-    // spread = 100 ln(25/19) ≈ 27.44
-    expect(scoreLabel(inside!)).toBe('Cost 27');
+    expect(scoreLabel(inside!)).toBe('Score 50');
+    // Answer 23: width is 26% of the answer → 57.
+    const better = marketScore(numberMarket({ status: 'settled', settledValue: 23 }));
+    expect(better?.good).toBe(true);
+    expect(scoreLabel(better!)).toBe('Score 57');
 
-    // Above the ask: cost = 27.44 + 4 × 100 ln(31/25) ≈ 113.49
+    // Outside the quote scores 0.
     const above = marketScore(numberMarket({ status: 'settled', settledValue: 30 }));
     expect(above?.good).toBe(false);
-    expect(scoreLabel(above!)).toBe('Cost 113');
+    expect(above?.kind === 'number' && above.result.position).toBe('above');
+    expect(scoreLabel(above!)).toBe('Score 0');
   });
 
   it('does not score open or void markets', () => {

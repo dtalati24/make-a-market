@@ -2,14 +2,13 @@ import type { Market, MarketKind } from '@/db/types';
 import {
   brierScore,
   mean,
-  numberCost,
+  numberScore,
   rollingMean,
   type BinaryItem,
   type CalibrationBin,
   type ConfidenceVerdict,
   type NumberItem,
   type RollingPoint,
-  type WidthVerdict,
 } from '@/scoring';
 
 import { allTags } from './market-view';
@@ -39,14 +38,14 @@ function toNumberItem(market: Market, which: QuoteSet): NumberItem | null {
   return bid === null || ask === null ? null : { bid, ask, value: market.settledValue };
 }
 
-/** Brier (Yes/No) or cost (Number) of one settled market; null if it isn't a settled market of that kind. */
+/** Brier (Yes/No) or 0–100 score (Number) of one settled market; null if it isn't a settled market of that kind. */
 function scoreOf(market: Market, kind: MarketKind, which: QuoteSet): number | null {
   if (kind === 'binary') {
     const item = toBinaryItem(market, which);
     return item === null ? null : brierScore(item.p, item.outcome);
   }
   const item = toNumberItem(market, which);
-  return item === null ? null : numberCost(item.bid, item.ask, item.value).cost;
+  return item === null ? null : numberScore(item.bid, item.ask, item.value).score;
 }
 
 function collect<T>(markets: readonly Market[], pick: (market: Market) => T | null): T[] {
@@ -76,10 +75,10 @@ export function binaryTrend(markets: readonly Market[], window = 10): RollingPoi
   );
 }
 
-/** Rolling mean cost (starting quotes) over the last `window` settled Number markets. */
+/** Rolling mean score (starting quotes) over the last `window` settled Number markets. */
 export function numberTrend(markets: readonly Market[], window = 10): RollingPoint[] {
   return rollingMean(
-    numberItems(markets, 'initial').map((item) => numberCost(item.bid, item.ask, item.value).cost),
+    numberItems(markets, 'initial').map((item) => numberScore(item.bid, item.ask, item.value).score),
     window,
   );
 }
@@ -87,7 +86,7 @@ export function numberTrend(markets: readonly Market[], window = 10): RollingPoi
 export type TagRow = { tag: string; n: number; score: number };
 
 /**
- * Mean Brier (Yes/No) or mean cost (Number) per tag, over settled markets of that kind.
+ * Mean Brier (Yes/No) or mean score (Number) per tag, over settled markets of that kind.
  * Tags are matched case-insensitively and shown with their first-seen spelling.
  * Sorted by count (most first), then tag name.
  */
@@ -206,32 +205,23 @@ export function confidenceText(verdict: ConfidenceVerdict): string {
   }
 }
 
-export function widthText(verdict: WidthVerdict): string {
-  switch (verdict.kind) {
-    case 'insufficient':
-      return 'Settle at least 5 markets for a verdict';
-    case 'too-tight':
-      return 'Quotes too tight — the answer lands outside more than half the time. Widen them.';
-    case 'too-wide':
-      return 'Quotes too wide — you’re paying for spread you don’t need.';
-    case 'about-right':
-      return 'Width about right — the answer lands inside about half the time.';
-  }
-}
-
 /** The small-sample warning, or null when there's nothing (or enough) to warn about. */
 export function noiseWarning(n: number): string | null {
   if (n < 1 || n >= 20) return null;
   return `Based on ${n} settled market${n === 1 ? '' : 's'} — numbers are noisy until about 20.`;
 }
 
-/** "Starting quotes: 0.180 · Final quotes: 0.150 — re-quoting helped" (lower is better for both kinds). */
-export function requoteLine(effect: RequoteEffect, digits: number): string {
+/**
+ * "Starting quotes: 0.180 · Final quotes: 0.150 — re-quoting helped". Lower is better for
+ * Brier (Yes/No); pass `higherIsBetter` for Number scores.
+ */
+export function requoteLine(effect: RequoteEffect, digits: number, higherIsBetter = false): string {
   const initial = effect.initial.toFixed(digits);
   const final = effect.final.toFixed(digits);
+  const improved = higherIsBetter ? effect.final > effect.initial : effect.final < effect.initial;
   let verdict: string;
   if (initial === final) verdict = 're-quoting made no difference';
-  else verdict = effect.final < effect.initial ? 're-quoting helped' : 're-quoting hurt';
+  else verdict = improved ? 're-quoting helped' : 're-quoting hurt';
   return `Starting quotes: ${initial} · Final quotes: ${final} — ${verdict}`;
 }
 

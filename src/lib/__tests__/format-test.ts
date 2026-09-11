@@ -1,4 +1,14 @@
-import { formatNumber, formatPercent, formatPrice, parseNumberInput } from '../format';
+import { formatNumber, formatPercent, formatPoints, formatPrice, parseNumberInput } from '../format';
+
+describe('formatPoints', () => {
+  it('rounds scores and uses a real minus sign', () => {
+    expect(formatPoints(81.6)).toBe('82');
+    expect(formatPoints(-61.5)).toBe('−61');
+    expect(formatPoints(-62.4)).toBe('−62');
+    expect(formatPoints(-0.3)).toBe('0');
+    expect(formatPoints(100)).toBe('100');
+  });
+});
 
 describe('formatPrice', () => {
   it('shows whole-number prices even with float noise', () => {

@@ -66,3 +66,6 @@ export type ReminderSettings = {
   /** "HH:MM", 24-hour, local time. */
   time: string;
 };
+
+/** Light / dark appearance: follow the phone ('system') or force one. */
+export type ThemePreference = 'system' | 'light' | 'dark';

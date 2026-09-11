@@ -8,6 +8,7 @@ import { EmptyState } from '@/components/empty-state';
 import { Icon } from '@/components/icon';
 import { MarketRow } from '@/components/market-row';
 import { FixedScreen } from '@/components/screen';
+import { ScreenTitle } from '@/components/screen-title';
 import { Segmented } from '@/components/segmented';
 import { ThemedText } from '@/components/themed-text';
 import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
@@ -69,10 +70,9 @@ export default function MarketsScreen() {
 
   const header = (
     <View style={styles.header}>
-      <View style={styles.titleRow}>
-        <ThemedText type="title">Markets</ThemedText>
+      <ScreenTitle title="Markets">
         <Button title="+ New" small onPress={() => router.push('/new')} />
-      </View>
+      </ScreenTitle>
       <Segmented
         options={[
           { value: 'open', label: `Open · ${openCount}` },
@@ -178,11 +178,6 @@ const styles = StyleSheet.create({
   header: {
     gap: Spacing.three,
     marginBottom: Spacing.two,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
   },
   search: {
     flexDirection: 'row',

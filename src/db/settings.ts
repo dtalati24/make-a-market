@@ -4,15 +4,33 @@ import { isValidTimeString } from '@/lib/dates';
 
 import { notifyDataChanged } from './events';
 import { transaction } from './transaction';
-import type { ReminderSettings } from './types';
+import type { ReminderSettings, ThemePreference } from './types';
 import { ValidationError } from './validation';
 
 export const DEFAULT_REMINDER_SETTINGS: ReminderSettings = { enabled: true, time: '09:00' };
+export const THEME_PREFERENCES: readonly ThemePreference[] = ['system', 'light', 'dark'];
 
 const KEYS = {
   remindersEnabled: 'reminders_enabled',
   reminderTime: 'reminder_time',
+  theme: 'theme',
 } as const;
+
+/** A stored theme value, or 'system' when it's missing or unrecognised. */
+export function parseThemePreference(value: string | undefined): ThemePreference {
+  return value === 'light' || value === 'dark' ? value : 'system';
+}
+
+export async function getThemePreference(db: SQLiteDatabase): Promise<ThemePreference> {
+  const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM settings WHERE key = ?', KEYS.theme);
+  return parseThemePreference(row?.value);
+}
+
+export async function saveThemePreference(db: SQLiteDatabase, preference: ThemePreference): Promise<void> {
+  if (!THEME_PREFERENCES.includes(preference)) throw new ValidationError('Pick System, Light or Dark.');
+  await writeSetting(db, KEYS.theme, preference);
+  notifyDataChanged();
+}
 
 async function readSettings(db: SQLiteDatabase): Promise<Map<string, string>> {
   const rows = await db.getAllAsync<{ key: string; value: string }>('SELECT key, value FROM settings');
