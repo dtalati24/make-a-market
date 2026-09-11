@@ -223,6 +223,14 @@ function parseStatus(value: unknown, where: string): MarketStatus {
   throw problem(where, 'status must be "open", "settled" or "void".');
 }
 
+/**
+ * The app only makes whole-percent prices. Others (e.g. 0.726) are rounded, so
+ * that editing the market later can't silently change the scored quote.
+ */
+function roundPrice(price: number): number {
+  return Math.round(price * 100) / 100;
+}
+
 function parseQuote(raw: unknown, kind: MarketKind, where: string): BackupQuote {
   if (!isObject(raw)) throw new ValidationError(`${where} isn’t a valid quote.`);
   const price = readNumberOrNull(raw, 'price', where);
@@ -234,7 +242,7 @@ function parseQuote(raw: unknown, kind: MarketKind, where: string): BackupQuote 
     if (price > 1) {
       throw problem(where, 'price must be a probability between 0.01 and 0.99 (a quote of 72 is written 0.72).');
     }
-    within(where, () => validatePrice(price));
+    within(where, () => validatePrice(roundPrice(price)));
   } else {
     if (bid === null || ask === null) throw problem(where, 'a Number quote needs a bid and an ask.');
     if (price !== null) throw problem(where, 'a Number quote can’t have a price.');
@@ -242,7 +250,7 @@ function parseQuote(raw: unknown, kind: MarketKind, where: string): BackupQuote 
   }
   const createdAt = readTimestamp(raw, 'createdAt', where, 'the quote date');
   if (createdAt === null) throw problem(where, 'the quote date (createdAt) is missing.');
-  return { price, bid, ask, note: readText(raw, 'note', where), createdAt };
+  return { price: price === null ? null : roundPrice(price), bid, ask, note: readText(raw, 'note', where), createdAt };
 }
 
 function parseMarket(raw: unknown, index: number): BackupMarket {

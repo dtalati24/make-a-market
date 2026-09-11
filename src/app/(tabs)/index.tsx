@@ -15,7 +15,7 @@ import { listMarkets } from '@/db/markets';
 import type { Market } from '@/db/types';
 import { useQuery } from '@/hooks/use-query';
 import { useTheme } from '@/hooks/use-theme';
-import { todayString } from '@/lib/dates';
+import { useToday } from '@/hooks/use-today';
 import {
   allTags,
   groupOpenMarkets,
@@ -40,6 +40,7 @@ function openMarket(market: Market) {
 export default function MarketsScreen() {
   const theme = useTheme();
   const { data: markets } = useQuery(listMarkets, []);
+  const today = useToday();
   const [view, setView] = useState<View_>('open');
   const [type, setType] = useState<TypeFilter>('all');
   const [tag, setTag] = useState<string | null>(null);
@@ -54,7 +55,7 @@ export default function MarketsScreen() {
 
   let sections: { title: string; data: Market[] }[];
   if (view === 'open') {
-    const { due, upcoming } = groupOpenMarkets(filtered, todayString());
+    const { due, upcoming } = groupOpenMarkets(filtered, today);
     sections = [
       { title: `Due · ${due.length}`, data: due },
       { title: `Upcoming · ${upcoming.length}`, data: upcoming },
@@ -142,7 +143,8 @@ export default function MarketsScreen() {
       <SectionList
         sections={sections}
         keyExtractor={(market) => String(market.id)}
-        renderItem={({ item }) => <MarketRow market={item} onPress={() => openMarket(item)} />}
+        extraData={today}
+        renderItem={({ item }) => <MarketRow market={item} today={today} onPress={() => openMarket(item)} />}
         renderSectionHeader={({ section }) =>
           section.title ? (
             <ThemedText type="caption" themeColor="textSecondary" style={styles.sectionTitle}>

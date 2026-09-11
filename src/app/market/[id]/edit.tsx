@@ -6,9 +6,16 @@ import { EmptyState } from '@/components/empty-state';
 import { MarketForm } from '@/components/market-form';
 import { ScrollScreen } from '@/components/screen';
 import { getMarket, listTagNames } from '@/db/markets';
+import type { Market, QuoteInput } from '@/db/types';
 import { useQuery } from '@/hooks/use-query';
 import { updateMarketAction } from '@/lib/actions';
 import { goBack } from '@/lib/navigation';
+
+function sameAsStartingQuote(quote: QuoteInput, market: Market): boolean {
+  return quote.kind === 'binary'
+    ? quote.price === market.initialPrice
+    : quote.bid === market.initialBid && quote.ask === market.initialAsk;
+}
 
 export default function EditMarketScreen() {
   const { id: idParam } = useLocalSearchParams<{ id: string }>();
@@ -44,7 +51,9 @@ export default function EditMarketScreen() {
         tagSuggestions={tagNames}
         submitLabel="Save changes"
         onSubmit={async ({ input, quote }) => {
-          await updateMarketAction(db, id, input, allowQuoteEdit && quote ? quote : undefined);
+          // Only rewrite the scored starting quote if it actually changed.
+          const newQuote = allowQuoteEdit && quote && !sameAsStartingQuote(quote, market) ? quote : undefined;
+          await updateMarketAction(db, id, input, newQuote);
           goBack();
         }}
       />

@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { notifyDataChanged } from './events';
+import { transaction } from './transaction';
 import type { Market, MarketInput, MarketKind, MarketStatus, NewMarketInput, Quote, QuoteInput } from './types';
 import { normalizeMarketInput, validateQuote, validateSettledValue, ValidationError } from './validation';
 
@@ -161,7 +162,7 @@ export async function createMarket(db: SQLiteDatabase, input: NewMarketInput, no
   const createdAt = now.toISOString();
   const q = quoteColumns(input.quote);
   let id = 0;
-  await db.withTransactionAsync(async () => {
+  await transaction(db, async () => {
     const result = await db.runAsync(
       `INSERT INTO markets (
          kind, is_decision, question, unit,
@@ -218,7 +219,7 @@ export async function updateMarket(
     }
     validateQuote(initialQuote);
   }
-  await db.withTransactionAsync(async () => {
+  await transaction(db, async () => {
     await db.runAsync(
       `UPDATE markets SET
          is_decision = ?, question = ?, unit = ?, reasoning = ?, success_criteria = ?,
@@ -265,7 +266,7 @@ export async function requoteMarket(
   if (quote.kind !== market.kind) throw new ValidationError('Quote type doesn’t match the market.');
   validateQuote(quote);
   const q = quoteColumns(quote);
-  await db.withTransactionAsync(async () => {
+  await transaction(db, async () => {
     await db.runAsync('UPDATE markets SET price = ?, bid = ?, ask = ? WHERE id = ?', [q.price, q.bid, q.ask, id]);
     await db.runAsync(
       'INSERT INTO quotes (market_id, price, bid, ask, note, created_at) VALUES (?, ?, ?, ?, ?, ?)',
@@ -346,7 +347,7 @@ export async function setNotificationId(db: SQLiteDatabase, id: number, notifica
 }
 
 export async function deleteMarket(db: SQLiteDatabase, id: number): Promise<void> {
-  await db.withTransactionAsync(async () => {
+  await transaction(db, async () => {
     await db.runAsync('DELETE FROM markets WHERE id = ?', id);
     await deleteUnusedTags(db);
   });
@@ -357,7 +358,7 @@ export async function deleteMarket(db: SQLiteDatabase, id: number): Promise<void
 export async function deleteMarketsWithTag(db: SQLiteDatabase, tag: string): Promise<string[]> {
   const where = `id IN (SELECT mt.market_id FROM market_tags mt JOIN tags t ON t.id = mt.tag_id WHERE t.name = ?)`;
   let reminderIds: string[] = [];
-  await db.withTransactionAsync(async () => {
+  await transaction(db, async () => {
     const rows = await db.getAllAsync<{ notification_id: string | null }>(
       `SELECT notification_id FROM markets WHERE ${where}`,
       tag,
@@ -373,7 +374,7 @@ export async function deleteMarketsWithTag(db: SQLiteDatabase, tag: string): Pro
 /** Deletes all markets, quotes and tags (settings are kept). Returns reminder ids to cancel. */
 export async function deleteAllMarkets(db: SQLiteDatabase): Promise<string[]> {
   let reminderIds: string[] = [];
-  await db.withTransactionAsync(async () => {
+  await transaction(db, async () => {
     const rows = await db.getAllAsync<{ notification_id: string }>(
       'SELECT notification_id FROM markets WHERE notification_id IS NOT NULL',
     );

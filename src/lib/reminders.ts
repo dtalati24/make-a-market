@@ -39,19 +39,29 @@ export async function ensureReminderPermission(): Promise<boolean> {
   return requested.granted;
 }
 
+/** Whether reminders can be shown, without asking. */
+async function hasReminderPermission(): Promise<boolean> {
+  await ensureChannel();
+  return (await Notifications.getPermissionsAsync()).granted;
+}
+
 /**
  * Schedules the settle-by reminder for a market. Returns the notification id,
  * or null when reminders are off, the moment has passed, or permission is denied.
+ * With `askPermission: false` (bulk re-syncs) it only checks permission, so the
+ * system prompt never appears several times in a row.
  */
 export async function scheduleReminder(
   market: Pick<Market, 'id' | 'question' | 'resolveBy'>,
   settings: ReminderSettings,
   now: Date = new Date(),
+  options: { askPermission?: boolean } = {},
 ): Promise<string | null> {
   if (!settings.enabled) return null;
   const when = reminderMoment(market.resolveBy, settings.time);
   if (when.getTime() <= now.getTime()) return null;
-  if (!(await ensureReminderPermission())) return null;
+  const allowed = options.askPermission === false ? await hasReminderPermission() : await ensureReminderPermission();
+  if (!allowed) return null;
   return Notifications.scheduleNotificationAsync({
     content: {
       title: 'Time to settle a market',
@@ -66,6 +76,7 @@ export async function scheduleReminder(
   });
 }
 
+/** Cancels a scheduled reminder, and clears it from the notification tray if it has already fired. */
 export async function cancelReminder(notificationId: string | null): Promise<void> {
   if (!notificationId) return;
   try {
@@ -73,6 +84,11 @@ export async function cancelReminder(notificationId: string | null): Promise<voi
   } catch (error) {
     // Already fired or cleared by the OS — nothing to cancel.
     console.warn('Could not cancel reminder', error);
+  }
+  try {
+    await Notifications.dismissNotificationAsync(notificationId);
+  } catch {
+    // Not in the tray — nothing to clear.
   }
 }
 

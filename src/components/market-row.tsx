@@ -3,13 +3,14 @@ import { StyleSheet, View } from 'react-native';
 import { Spacing } from '@/constants/theme';
 import type { Market } from '@/db/types';
 import { useTheme } from '@/hooks/use-theme';
-import { dueLabel, formatDateTime, todayString } from '@/lib/dates';
+import { dueLabel, formatDateTime, parseLocalDate } from '@/lib/dates';
 import { currentQuote, initialQuote, marketScore, outcomeLabel, scoreLabel } from '@/lib/market-view';
 
 import { Card } from './card';
 import { ThemedText } from './themed-text';
 
-export function MarketRow({ market, onPress }: { market: Market; onPress: () => void }) {
+/** `today` ("YYYY-MM-DD", from useToday) is passed in so due labels refresh at midnight. */
+export function MarketRow({ market, today, onPress }: { market: Market; today: string; onPress: () => void }) {
   const theme = useTheme();
   const open = market.status === 'open';
   const score = marketScore(market);
@@ -18,8 +19,8 @@ export function MarketRow({ market, onPress }: { market: Market; onPress: () => 
   let when: string;
   let whenColor: string = theme.textSecondary;
   if (open) {
-    when = dueLabel(market.resolveBy);
-    if (market.resolveBy <= todayString()) whenColor = theme.warning;
+    when = dueLabel(market.resolveBy, parseLocalDate(today));
+    if (market.resolveBy <= today) whenColor = theme.warning;
   } else {
     when = market.settledAt ? formatDateTime(market.settledAt) : '';
   }

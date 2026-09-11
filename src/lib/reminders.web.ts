@@ -14,6 +14,7 @@ export async function scheduleReminder(
   _market: Pick<Market, 'id' | 'question' | 'resolveBy'>,
   _settings: ReminderSettings,
   _now: Date = new Date(),
+  _options: { askPermission?: boolean } = {},
 ): Promise<string | null> {
   return null;
 }

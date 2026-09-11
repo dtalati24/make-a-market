@@ -3,6 +3,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { isValidTimeString } from '@/lib/dates';
 
 import { notifyDataChanged } from './events';
+import { transaction } from './transaction';
 import type { ReminderSettings } from './types';
 import { ValidationError } from './validation';
 
@@ -38,7 +39,7 @@ export async function getReminderSettings(db: SQLiteDatabase): Promise<ReminderS
 
 export async function saveReminderSettings(db: SQLiteDatabase, settings: ReminderSettings): Promise<void> {
   if (!isValidTimeString(settings.time)) throw new ValidationError('Pick a valid reminder time.');
-  await db.withTransactionAsync(async () => {
+  await transaction(db, async () => {
     await writeSetting(db, KEYS.remindersEnabled, settings.enabled ? '1' : '0');
     await writeSetting(db, KEYS.reminderTime, settings.time);
   });

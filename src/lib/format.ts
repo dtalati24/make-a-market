@@ -14,10 +14,16 @@ export function formatNumber(value: number): string {
 
 /**
  * Parses what a user typed into a number field. Accepts "12", "12.5", ".5",
- * "1,200" and surrounding spaces; returns null for anything else.
+ * "1,200" (thousands), "2,5" (a decimal comma, as some keyboards type it) and
+ * surrounding spaces; returns null for anything else.
  */
 export function parseNumberInput(text: string): number | null {
-  const cleaned = text.trim().replace(/,/g, '');
+  let cleaned = text.trim();
+  if (/^-?\d{1,3}(,\d{3})+(\.\d*)?$/.test(cleaned)) {
+    cleaned = cleaned.replace(/,/g, '');
+  } else if (/^-?\d*,\d*$/.test(cleaned)) {
+    cleaned = cleaned.replace(',', '.');
+  }
   if (!/^-?(\d+\.?\d*|\.\d+)$/.test(cleaned)) return null;
   const value = Number(cleaned);
   return Number.isFinite(value) ? value : null;

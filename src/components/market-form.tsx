@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Pressable, StyleSheet, Switch, View } from 'react-native';
 
 import { Radius, Spacing } from '@/constants/theme';
@@ -71,6 +71,8 @@ export function MarketForm({
   const [reasoning, setReasoning] = useState(initial?.reasoning ?? '');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // A ref as well as state, so a fast double tap can't save the market twice.
+  const submittingRef = useRef(false);
 
   const decision = kind === 'binary' && isDecision;
   const showQuote = !initial || allowQuoteEdit;
@@ -84,6 +86,8 @@ export function MarketForm({
   }
 
   async function submit() {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setError(null);
     try {
       const quote = showQuote ? buildQuote() : null;
@@ -106,6 +110,7 @@ export function MarketForm({
     } catch (e) {
       setError(errorMessage(e));
     } finally {
+      submittingRef.current = false;
       setSaving(false);
     }
   }

@@ -1,6 +1,6 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/button';
@@ -19,6 +19,7 @@ import type { Market, Quote, QuoteInput } from '@/db/types';
 import { ValidationError } from '@/db/validation';
 import { useQuery } from '@/hooks/use-query';
 import { useTheme } from '@/hooks/use-theme';
+import { useToday } from '@/hooks/use-today';
 import {
   deleteMarketAction,
   reopenMarketAction,
@@ -27,7 +28,7 @@ import {
   voidMarketAction,
 } from '@/lib/actions';
 import { confirm, showMessage } from '@/lib/confirm';
-import { formatDate, formatDateTime, relativeDays } from '@/lib/dates';
+import { formatDate, formatDateTime, parseLocalDate, relativeDays } from '@/lib/dates';
 import { errorMessage } from '@/lib/errors';
 import { goBack } from '@/lib/navigation';
 import { formatPrice, parseNumberInput } from '@/lib/format';
@@ -60,8 +61,10 @@ function screenTitle(market: Market): string {
   return market.kind === 'binary' ? 'Yes/No market' : 'Number market';
 }
 
-function statusLine(market: Market): string {
-  if (market.status === 'open') return `Settle by ${formatDate(market.resolveBy)} · ${relativeDays(market.resolveBy)}`;
+function statusLine(market: Market, today: string): string {
+  if (market.status === 'open') {
+    return `Settle by ${formatDate(market.resolveBy)} · ${relativeDays(market.resolveBy, parseLocalDate(today))}`;
+  }
   const when = market.settledAt ? formatDateTime(market.settledAt) : '';
   return `${market.status === 'void' ? 'Voided' : 'Settled'} ${when} · made ${formatDateTime(market.createdAt)}`;
 }
@@ -77,6 +80,7 @@ export default function MarketScreen() {
   const theme = useTheme();
   const { data: market } = useQuery((database) => getMarket(database, id), [id]);
   const [deleting, setDeleting] = useState(false);
+  const today = useToday();
 
   if (market === undefined || deleting) {
     return (
@@ -118,7 +122,7 @@ export default function MarketScreen() {
         <View style={styles.header}>
           <ThemedText type="subtitle">{market.question}</ThemedText>
           <ThemedText type="small" themeColor="textSecondary">
-            {statusLine(market)}
+            {statusLine(market, today)}
           </ThemedText>
           {market.tags.length > 0 ? (
             <View style={styles.wrap}>
@@ -210,6 +214,9 @@ function RequoteCard({ market }: { market: Market }) {
   const [ask, setAsk] = useState('');
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  // A ref as well as state, so a fast double tap can't save the quote twice.
+  const savingRef = useRef(false);
 
   function start() {
     setPrice(Math.round((market.price ?? 0.5) * 100));
@@ -221,6 +228,9 @@ function RequoteCard({ market }: { market: Market }) {
   }
 
   async function save() {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
     try {
       let quote: QuoteInput;
       if (market.kind === 'binary') {
@@ -235,6 +245,9 @@ function RequoteCard({ market }: { market: Market }) {
       setEditing(false);
     } catch (e) {
       setError(errorMessage(e));
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
   }
 
@@ -265,7 +278,7 @@ function RequoteCard({ market }: { market: Market }) {
       ) : null}
       <View style={styles.row}>
         <Button title="Cancel" variant="secondary" onPress={() => setEditing(false)} style={styles.flex} />
-        <Button title="Save quote" onPress={save} style={styles.flex} />
+        <Button title="Save quote" onPress={save} disabled={saving} style={styles.flex} />
       </View>
     </Card>
   );

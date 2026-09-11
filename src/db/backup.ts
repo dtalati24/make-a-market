@@ -5,6 +5,7 @@ import type { Backup, BackupMarket } from '@/lib/backup-format';
 import { notifyDataChanged } from './events';
 import { getQuotes, listMarkets } from './markets';
 import { getReminderSettings } from './settings';
+import { transaction } from './transaction';
 import type { Market, Quote, ReminderSettings } from './types';
 import { ValidationError } from './validation';
 
@@ -105,7 +106,7 @@ async function writeSetting(db: SQLiteDatabase, key: string, value: string): Pro
  */
 export async function replaceAllData(db: SQLiteDatabase, backup: Backup): Promise<ReplaceResult> {
   let staleReminderIds: string[] = [];
-  await db.withTransactionAsync(async () => {
+  await transaction(db, async () => {
     const rows = await db.getAllAsync<{ notification_id: string }>(
       'SELECT notification_id FROM markets WHERE notification_id IS NOT NULL',
     );

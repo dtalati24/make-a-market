@@ -228,6 +228,15 @@ describe('parseBackup', () => {
   });
 });
 
+describe('parseBackup prices', () => {
+  it('rounds Yes/No prices to whole percents', () => {
+    const at = '2026-09-01T10:00:00.000Z';
+    const parsed = parseBackup(withMarket({ quotes: [{ price: 0.726, createdAt: at }] }, 1));
+    expect(parsed.markets[1].quotes[0].price).toBe(0.73);
+    expect(parseError(withMarket({ quotes: [{ price: 0.004, createdAt: at }] }, 1))).toMatch(/between 1 and 99/);
+  });
+});
+
 describe('CSV', () => {
   it('guards cells that spreadsheets would run as formulas', () => {
     expect(guardFormula('=SUM(A1:A9)')).toBe("'=SUM(A1:A9)");

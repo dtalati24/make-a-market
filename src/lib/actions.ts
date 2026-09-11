@@ -30,14 +30,15 @@ import { cancelReminder, scheduleReminder } from './reminders';
  * than the raw queries. A reminder failure never blocks the write itself.
  */
 
-async function syncReminder(db: SQLiteDatabase, id: number): Promise<void> {
+/** `askPermission` is false for bulk re-syncs, which must not show the permission prompt. */
+async function syncReminder(db: SQLiteDatabase, id: number, askPermission = true): Promise<void> {
   try {
     const market = await getMarket(db, id);
     if (!market) return;
     await cancelReminder(market.notificationId);
     let notificationId: string | null = null;
     if (market.status === 'open') {
-      notificationId = await scheduleReminder(market, await getReminderSettings(db));
+      notificationId = await scheduleReminder(market, await getReminderSettings(db), new Date(), { askPermission });
     }
     await setNotificationId(db, id, notificationId);
   } catch (error) {
@@ -97,11 +98,15 @@ export async function deleteAllMarketsAction(db: SQLiteDatabase): Promise<void> 
   await Promise.all(reminderIds.map(cancelReminder));
 }
 
-/** Re-creates every reminder, e.g. after the reminder time changes or data is imported. */
+/**
+ * Re-creates every reminder, e.g. after the reminder time changes or data is
+ * imported. Never shows the permission prompt; Settings asks when reminders
+ * are turned on, and saving a market asks the first time.
+ */
 export async function syncAllReminders(db: SQLiteDatabase): Promise<void> {
   const markets = await listMarkets(db);
   for (const market of markets) {
-    if (market.status === 'open' || market.notificationId) await syncReminder(db, market.id);
+    if (market.status === 'open' || market.notificationId) await syncReminder(db, market.id, false);
   }
 }
 

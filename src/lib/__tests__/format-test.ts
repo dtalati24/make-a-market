@@ -37,6 +37,17 @@ describe('parseNumberInput', () => {
     expect(parseNumberInput('0')).toBe(0);
   });
 
+  it('reads a lone comma as a decimal point, and 3-digit groups as thousands', () => {
+    expect(parseNumberInput('2,5')).toBe(2.5);
+    expect(parseNumberInput('0,75')).toBe(0.75);
+    expect(parseNumberInput(',5')).toBe(0.5);
+    expect(parseNumberInput('12,345.6')).toBe(12345.6);
+    expect(parseNumberInput('1,234,567')).toBe(1234567);
+    expect(parseNumberInput('1,2,3')).toBeNull();
+    expect(parseNumberInput('1,2.5')).toBeNull();
+    expect(parseNumberInput(',')).toBeNull();
+  });
+
   it('rejects anything else', () => {
     expect(parseNumberInput('')).toBeNull();
     expect(parseNumberInput('abc')).toBeNull();
